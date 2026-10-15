@@ -9,6 +9,9 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/app-api';
 const MOBILE_API_BASE = (import.meta.env.VITE_MOBILE_API_BASE_URL || '/app-api/mobile/v1').replace(/\/$/, '');
 const ASSET_ORIGIN = MOBILE_API_BASE.startsWith('http') ? new URL(MOBILE_API_BASE).origin : '';
+// The mock authentication path is compiled only by `npm run build:mock`.
+const MOCK_LOGIN_ENABLED = import.meta.env.MODE === 'mock';
+export const isMockLoginEnabled = MOCK_LOGIN_ENABLED;
 
 // ====================== 类型定义 ======================
 
@@ -121,6 +124,7 @@ export interface SessionUser {
   phone: string;
   token: string;
   isNewUser?: boolean;
+  isMock?: boolean;
 }
 
 export interface Address {
@@ -337,10 +341,25 @@ function unwrap<T>(raw: any): T {
 }
 
 export async function sendLoginCode(phone: string): Promise<{ debugCode?: string }> {
+  if (MOCK_LOGIN_ENABLED) return { debugCode: '任意验证码' };
   return unwrap(await requestJson('POST', `${API_BASE}/user/send-code`, { phone }));
 }
 
-export async function loginWithSms(phone: string, code: string): Promise<SessionUser> {
+export async function loginWithSms(phone: string, code: string, identity: SessionUser['identity'] = 'consumer'): Promise<SessionUser> {
+  if (MOCK_LOGIN_ENABLED) {
+    const session: SessionUser = {
+      userId: 9000001,
+      nickname: '本地测试用户',
+      avatar: '',
+      identity,
+      phone,
+      token: 'local-mock-session',
+      isNewUser: false,
+      isMock: true
+    };
+    saveSession(session);
+    return session;
+  }
   const session = unwrap<SessionUser>(await requestJson('POST', `${API_BASE}/user/phone-login`, { phone, code }));
   saveSession(session);
   return session;

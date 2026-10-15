@@ -54,6 +54,7 @@ import {
   fetchOrders,
   getStoredSession,
   loginWithSms,
+  isMockLoginEnabled,
   removeCartItem as removeCartItemApi,
   sendLoginCode,
   updateAddress,
@@ -272,6 +273,10 @@ export function App() {
   useEffect(() => {
     const stored = getStoredSession();
     if (!stored) return;
+    if (stored.isMock) {
+      setSession(stored);
+      return;
+    }
     fetchCurrentUser()
       .then(async (user) => {
         setSession({ ...stored, ...user, token: stored.token });
@@ -291,7 +296,9 @@ export function App() {
   const completeLogin = () => {
     const nextSession = getStoredSession();
     setSession(nextSession);
-    loadTradeData().catch((error) => notify(error instanceof Error ? error.message : '交易数据加载失败'));
+    if (!nextSession?.isMock) {
+      loadTradeData().catch((error) => notify(error instanceof Error ? error.message : '交易数据加载失败'));
+    }
     if (nextSession?.identity !== 'farmer' || role === 'consumer') {
       setRole('consumer');
       setConsumerTab('home');
@@ -660,7 +667,7 @@ function Login({ role, onBack, onDone }: { role: Role; onBack: () => void; onDon
       setLoginHint('请先阅读并同意服务协议');
       return;
     }
-    if (method === 'code' && (!/^1\d{10}$/.test(phone) || code.trim().length < 4)) {
+    if (method === 'code' && !isMockLoginEnabled && (!/^1\d{10}$/.test(phone) || code.trim().length < 4)) {
       setLoginHint('请输入手机号和验证码');
       return;
     }
@@ -672,7 +679,7 @@ function Login({ role, onBack, onDone }: { role: Role; onBack: () => void; onDon
     }
     setLoginHint('正在校验验证码...');
     try {
-      await loginWithSms(phone, code.trim());
+      await loginWithSms(phone || '13800000000', code.trim() || '0000', role);
       onDone();
     } catch (error) {
       setLoginHint(error instanceof Error ? error.message : '登录失败，请稍后重试');
@@ -692,7 +699,7 @@ function Login({ role, onBack, onDone }: { role: Role; onBack: () => void; onDon
         <button className={`primary-btn wide ${submitting ? 'loading' : ''}`} onClick={() => submit()}>{submitting ? '正在进入...' : '一键登录'}</button>
         <button className={`agreement ${agreed ? 'checked' : ''}`} onClick={() => setAgreed((value) => !value)}><i />已阅读并同意《隐私服务协议》《用户服务协议》</button>
         {loginHint && <p className="login-hint">{loginHint}</p>}
-        <p className="login-hint">当前仅开通短信验证码登录</p>
+        <p className="login-hint">{isMockLoginEnabled ? '本地测试包：同意协议后可直接进入，无需真实验证码' : '当前仅开通短信验证码登录'}</p>
       </div>
     </section>
   );
