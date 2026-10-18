@@ -104,7 +104,7 @@
 
 /* Orders and account service pages use the same white-card / pale canvas rhythm. */
 .consumer-mp-shell .consumer-cart-tab,.consumer-mp-shell .orders-red,.consumer-mp-shell .order-detail-red,.consumer-mp-shell .address-red,.consumer-mp-shell .messages-red,.consumer-mp-shell .service-red,.consumer-mp-shell .settings-red { padding: 10px 11px calc(20px + env(safe-area-inset-bottom,0px)); }
-.consumer-mp-shell .consumer-tab-title { padding: 5px 2px 12px; color: #26332f; font-size: 18px; font-weight: 700; }
+.consumer-mp-shell .consumer-tab-title { padding: calc(5px + env(safe-area-inset-top, 0px)) 2px 12px; color: #26332f; font-size: 18px; font-weight: 700; }
 .consumer-mp-shell .order-tabs-red { position: sticky; z-index: 2; top: 0; display: flex; justify-content: space-between; gap: 8px; margin: -10px -11px 10px; padding: 0 10px; border-bottom: 1px solid #edf0ee; }
 .consumer-mp-shell .order-tabs-red button { min-width: 44px; padding: 13px 2px 10px; color: #77847d; font-size: 11px; }
 .consumer-mp-shell .order-tabs-red button.active { color: #118b7b; }
@@ -156,6 +156,224 @@
 .consumer-mp-shell .logout-red { width: 100%; min-height: 43px; margin-top: 18px; border: 1px solid #eadfdd; border-radius: 10px; background: #fff; color: #bb6b61; font-size: 12px; }
 
 @media (min-width: 560px) {
-  .consumer-mp-shell .mall-market-page,.consumer-mp-shell .orders-red,.consumer-mp-shell .order-detail-red,.consumer-mp-shell .address-red,.consumer-mp-shell .messages-red,.consumer-mp-shell .service-red,.consumer-mp-shell .settings-red { padding-right: 16px; padding-left: 16px; }
+  .consumer-mp-shell .orders-red,.consumer-mp-shell .order-detail-red,.consumer-mp-shell .address-red,.consumer-mp-shell .messages-red,.consumer-mp-shell .service-red,.consumer-mp-shell .settings-red { padding-right: 16px; padding-left: 16px; }
   .consumer-mp-shell .market-product-list { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
+
+/* 商城页：对齐小程序 mall 结构（搜索头 + 圆形分类图条 + 左侧栏 + 右侧货架 + 底部结算栏） */
+.consumer-mp-shell .mall-market-page { height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+
+/* 顶部白底圆角头，自带安全区 padding，避免与状态栏重叠 */
+.consumer-mp-shell .mall-top { flex: 0 0 auto; padding-top: env(safe-area-inset-top, 0px); background: #fff; border-radius: 0 0 18px 18px; }
+.consumer-mp-shell .mall-search-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; }
+.consumer-mp-shell .mall-back { display: flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; margin: 0 2px 0 0; border: 0; border-radius: 50%; background: #f3f3f4; color: #3a3d42; }
+.consumer-mp-shell .mall-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; background: #f3f3f4; border-radius: 18px; }
+.consumer-mp-shell .mall-search > svg { color: #9a9da3; flex: none; }
+.consumer-mp-shell .mall-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #26332f; font-size: 13px; height: 36px; }
+.consumer-mp-shell .mall-search-clear { border: 0; background: transparent; color: #9a9da3; font-size: 16px; line-height: 1; padding: 0 2px; }
+.consumer-mp-shell .mall-search-submit { flex: none; border: 0; background: transparent; color: #118b7b; font-size: 12px; padding: 0 2px 0 8px; }
+
+.consumer-mp-shell .mall-departments { display: flex; align-items: center; padding: 2px 0 10px; }
+.consumer-mp-shell .department-scroll { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.consumer-mp-shell .department-scroll::-webkit-scrollbar { display: none; }
+.consumer-mp-shell .department-row { display: flex; gap: 2px; padding: 0 6px; }
+.consumer-mp-shell .department { flex: 1 1 0; min-width: 0; width: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: #333; font-size: 10px; }
+.consumer-mp-shell .department-photo { width: 38px; height: 38px; border-radius: 50%; padding: 2px; background: #faf7ee; overflow: hidden; border: 2px solid transparent; box-sizing: border-box; }
+.consumer-mp-shell .department-photo img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.consumer-mp-shell .department-photo .dept-fallback { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; background: #eef2ee; color: #9aa49f; font-size: 14px; }
+.consumer-mp-shell .department.selected .department-photo { border-color: #118b7b; }
+.consumer-mp-shell .department.selected span { color: #fff; background: #118b7b; border-radius: 8px; padding: 0 3px; }
+.consumer-mp-shell .department-all { flex: 0 0 34px; width: 34px; padding: 0 2px; border: 0; background: #fff; color: #26282d; font-size: 10px; border-left: 1px solid #eee; display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
+.consumer-mp-shell .department-all span { display: block; }
+
+/* 主体：左侧栏 + 右侧货架 */
+.consumer-mp-shell .mall-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.consumer-mp-shell .mall-categories { flex: 0 0 72px; width: 72px; box-sizing: border-box; height: 100%; overflow-y: auto; background: #f4f7f6; scrollbar-width: none; }
+.consumer-mp-shell .mall-categories::-webkit-scrollbar { display: none; }
+.consumer-mp-shell .mall-category { position: relative; width: 72px; max-width: 72px; min-width: 0; box-sizing: border-box; padding: 0 6px; margin: 0; border: 0; height: 47px; background: transparent; color: #383b40; display: flex; align-items: center; justify-content: center; font-size: 12px; text-align: center; }
+.consumer-mp-shell .mall-category.active { background: #fff; color: #118b7b; font-weight: 600; }
+.consumer-mp-shell .mall-category.active::before { content: ''; position: absolute; left: 0; top: 14px; width: 4px; height: 18px; border-radius: 2px; background: #118b7b; }
+
+.consumer-mp-shell .mall-shelf { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+.consumer-mp-shell .mall-subcategory { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; height: 34px; font-size: 12px; border-bottom: 1px solid #f6f6f6; flex: 0 0 auto; }
+.consumer-mp-shell .mall-subcategory > b { color: #118b7b; background: #eaf7f3; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.consumer-mp-shell .mall-sort-bar { display: flex; align-items: center; flex: 0 0 auto; height: 38px; border-bottom: 1px solid #f2f2f3; }
+.consumer-mp-shell .mall-sort-bar button { flex: 1; display: flex; gap: 5px; align-items: center; justify-content: center; background: #fff; border: 0; font-size: 12px; color: #383b40; }
+.consumer-mp-shell .mall-sort-bar button.active { color: #118b7b; font-weight: 600; }
+.consumer-mp-shell .mall-sort-bar button span { color: #b7b7bc; font-size: 11px; }
+.consumer-mp-shell .mall-data-hint { margin: 0; padding: 6px 12px; font-size: 10px; color: #9aa49f; background: #fafcfb; }
+
+.consumer-mp-shell .mall-product-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; background: #fff; }
+.consumer-mp-shell .mall-product-scroll::-webkit-scrollbar { display: none; }
+.consumer-mp-shell .mall-product { display: flex; gap: 8px; padding: 10px 8px 10px 7px; border-bottom: 1px solid #f0f0f2; }
+.consumer-mp-shell .mall-product-photo { width: 73px; height: 73px; flex: 0 0 73px; overflow: hidden; border-radius: 8px; background: #eef2ef; }
+.consumer-mp-shell .mall-product-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.consumer-mp-shell .mall-product-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.consumer-mp-shell .mall-product-name { font-size: 13px; line-height: 1.4; font-weight: 600; color: #2e4037; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.consumer-mp-shell .mall-product-origin, .consumer-mp-shell .mall-product-unit { display: block; color: #97999f; font-size: 11px; line-height: 1.45; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.consumer-mp-shell .mall-product-unit { font-size: 10px; }
+.consumer-mp-shell .mall-product-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 6px; gap: 6px; }
+.consumer-mp-shell .mall-product-price { font-size: 19px; font-weight: 600; line-height: 1; color: #cf6945; }
+.consumer-mp-shell .mall-product-price > span { font-size: 12px; }
+.consumer-mp-shell .mall-product-pending { font-size: 13px; color: #999; }
+.consumer-mp-shell .mall-product-open { display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 20px; background: #118b7b; color: #fff; line-height: 1; width: 30px; height: 30px; flex: 0 0 30px; border: 0; }
+.consumer-mp-shell .mall-product-stock { display: block; color: #a1a4aa; font-size: 10px; line-height: 1.5; margin-top: 4px; }
+
+.consumer-mp-shell .mall-list-footer { padding: 14px; text-align: center; font-size: 11px; color: #aaa; background: #fff; }
+.consumer-mp-shell .mall-state { padding: 48px 22px; text-align: center; }
+.consumer-mp-shell .mall-state-title { display: block; font-size: 13px; line-height: 1.6; color: #384a40; }
+.consumer-mp-shell .mall-state-description { display: block; font-size: 11px; color: #999; margin: 10px 0; }
+.consumer-mp-shell .mall-state-button { color: #118b7b; background: #eaf3ef; border: 0; border-radius: 6px; font-size: 12px; padding: 8px 14px; margin-top: 8px; }
+
+/* 底部结算栏：作为 mall 列底部固定子项，位于 tabbar 之上 */
+.consumer-mp-shell .mall-checkout-bar { flex: 0 0 auto; display: flex; align-items: center; margin: 6px 10px 8px; background: #fff; height: 52px; padding: 6px 8px; border-radius: 18px; border: 1px solid #edf0ee; box-shadow: 0 6px 18px rgba(15,59,51,.07); }
+.consumer-mp-shell .mall-checkout-bar .mall-checkout-icon { display: flex; justify-content: center; align-items: center; height: 40px; width: 40px; flex: 0 0 40px; color: #118b7b; border: 0; background: transparent; }
+.consumer-mp-shell .mall-checkout-copy { flex: 1; min-width: 0; font-size: 12px; }
+.consumer-mp-shell .mall-checkout-copy span { display: block; }
+.consumer-mp-shell .mall-checkout-copy span + span { font-size: 9px; color: #999; }
+.consumer-mp-shell .mall-checkout-bar > button { width: 110px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; height: 40px; flex: 0 0 110px; border: 0; border-radius: 14px; background: #118b7b; }
+
+
+/* ====================== 收银台（支付面板，对齐小程序 checkout pay-sheet） ====================== */
+.pay-sheet-mask { position: fixed; inset: 0; background: rgba(17, 38, 32, 0.45); z-index: 96; display: flex; align-items: flex-end; justify-content: center; }
+.pay-sheet { width: 100%; max-width: 560px; background: #fff; border-radius: 18px 18px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+.pay-sheet .pay-sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.pay-sheet .pay-sheet-head b { font-size: 16px; color: #26282d; }
+.pay-sheet .pay-sheet-head button { width: 30px; height: 30px; border-radius: 50%; background: #f3f3f4; color: #3a3d42; font-size: 18px; border: 0; }
+.pay-sheet .pay-amount { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 2px 6px; }
+.pay-sheet .pay-amount span { font-size: 13px; color: #7a7f85; }
+.pay-sheet .pay-amount strong { font-size: 26px; color: #cf6945; }
+.pay-sheet .pay-method { width: 100%; height: 48px; border-radius: 12px; background: #f6f7f6; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 600; color: #26282d; margin-top: 10px; border: 0; }
+.pay-sheet .pay-method:disabled { opacity: 0.55; }
+.pay-sheet .pay-tip { display: block; text-align: center; margin-top: 12px; font-size: 11px; color: #9aa49f; }
+
+/* ====================== 消费端「我的」页（对齐小程序 my） ====================== */
+.consumer-mp-shell .account-page { min-height: 100%; background: #f4f7f6; }
+.consumer-mp-shell .account-hero { background: #f4f7f6; padding: calc(8px + env(safe-area-inset-top, 0px)) 13px 0; }
+.consumer-mp-shell .account-top { display: flex; justify-content: flex-end; gap: 4px; padding: 6px 0 10px; }
+.consumer-mp-shell .account-top button { width: 40px; height: 40px; border-radius: 50%; background: #fff; border: 1px solid #e7ece9; font-size: 19px; display: flex; align-items: center; justify-content: center; }
+.consumer-mp-shell .account-profile { display: flex; align-items: center; gap: 12px; padding: 2px 2px 14px; cursor: pointer; }
+.consumer-mp-shell .account-avatar { flex: 0 0 47px; width: 47px; height: 47px; border-radius: 50%; padding: 4px; background: #fff; border: 1px solid #e3eae7; box-sizing: border-box; overflow: hidden; }
+.consumer-mp-shell .account-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.consumer-mp-shell .account-user { flex: 1; min-width: 0; }
+.consumer-mp-shell .account-name { display: block; font-size: 16px; font-weight: 600; color: #25342e; }
+.consumer-mp-shell .account-desc { display: block; font-size: 11px; color: #6e7a76; margin-top: 2px; }
+.consumer-mp-shell .account-chev { font-style: normal; font-size: 20px; color: #98a39c; }
+.consumer-mp-shell .account-login { padding: 6px 16px; border-radius: 16px; background: #118b7b; color: #fff; font-size: 13px; border: 0; }
+.consumer-mp-shell .account-content { padding: 0 13px calc(24px + env(safe-area-inset-bottom, 0px)); }
+.consumer-mp-shell .account-card { background: #fff; border: 1px solid #e7ece9; border-radius: 12px; margin-bottom: 9px; box-shadow: 0 2px 8px rgba(36, 51, 45, 0.025); }
+.consumer-mp-shell .account-order-grid { display: flex; align-items: stretch; padding: 12px 3px; min-height: 72px; }
+.consumer-mp-shell .account-shortcut { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: #25342e; position: relative; background: transparent; border: 0; }
+.consumer-mp-shell .account-shortcut-icon { font-size: 22px; line-height: 1; }
+.consumer-mp-shell .account-badge { position: absolute; right: 10px; top: -2px; min-width: 15px; height: 15px; line-height: 15px; padding: 0 4px; background: #cb5656; color: #fff; font-size: 10px; font-style: normal; border-radius: 15px; border: 1px solid #fff; }
+.consumer-mp-shell .account-services-title { padding: 9px 9px; font-size: 14px; font-weight: 600; color: #25342e; border-bottom: 1px solid #eef2f0; }
+.consumer-mp-shell .account-services-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px 4px; padding: 14px 4px 16px; }
+.consumer-mp-shell .account-service { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; color: #25342e; background: transparent; border: 0; }
+.consumer-mp-shell .account-service-icon { width: 30px; height: 30px; border-radius: 9px; background: #eaf6f2; border: 1px solid #dcebe5; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+
+/* ====================== 个人资料编辑（对齐小程序 profile-edit） ====================== */
+.profile-edit-overlay { position: fixed; inset: 0; background: #f4f7f6; z-index: 98; display: flex; flex-direction: column; }
+.pe-nav { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; background: #fff; border-bottom: 1px solid #eef2f0; }
+.pe-nav b { flex: 1; text-align: center; font-size: 16px; color: #25342e; }
+.pe-back { width: 34px; height: 34px; border-radius: 50%; background: #f3f3f4; color: #3a3d42; border: 0; display: flex; align-items: center; justify-content: center; }
+.pe-nav-holder { width: 34px; }
+.pe-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+.pe-loading { text-align: center; color: #98a39c; padding: 60px 0; font-size: 13px; }
+.pe-card { background: #fff; border: 1px solid #e7ece9; border-radius: 12px; margin-bottom: 10px; }
+.pe-avatar-card { display: flex; flex-direction: column; align-items: center; padding: 22px 16px 16px; }
+.pe-avatar { width: 88px; height: 88px; border-radius: 50%; overflow: hidden; background: #eef2f0; }
+.pe-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.pe-change-avatar { margin-top: 12px; padding: 8px 22px; border-radius: 18px; background: #118b7b; color: #fff; font-size: 13px; border: 0; }
+.pe-change-avatar:disabled { opacity: 0.6; }
+.pe-tip { font-size: 11px; color: #98a39c; margin-top: 8px; }
+.pe-form { padding: 4px 14px; }
+.pe-field { display: flex; align-items: center; gap: 10px; padding: 14px 0; border-bottom: 1px solid #eef2f0; }
+.pe-field:last-child { border-bottom: 0; }
+.pe-field label { flex: 0 0 56px; font-size: 13px; color: #25342e; }
+.pe-field input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 14px; color: #25342e; background: transparent; height: 34px; }
+.pe-field em { flex: 0 0 auto; font-size: 11px; color: #98a39c; font-style: normal; }
+.pe-field-row { align-items: center; }
+.pe-genders { flex: 1; display: flex; gap: 8px; }
+.pe-genders button { flex: 1; height: 32px; border-radius: 16px; border: 1px solid #e7ece9; background: #fff; color: #25342e; font-size: 13px; }
+.pe-genders button.active { background: linear-gradient(135deg, #17a08c, #0e7a6c); color: #fff; border-color: transparent; font-weight: 600; }
+.pe-badge { font-style: normal; font-size: 11px; color: #118b7b; }
+.pe-hint { font-size: 11px; color: #98a39c; padding: 4px 2px; }
+.pe-footer { flex: 0 0 auto; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); background: #fff; border-top: 1px solid #eef2f0; }
+.pe-footer button { width: 100%; height: 46px; border-radius: 23px; border: 0; background: linear-gradient(135deg, #17a08c, #0e7a6c); color: #fff; font-size: 15px; font-weight: 600; }
+.pe-footer button:disabled { opacity: 0.55; }
+
+/* ====================== 我的页 · 为你推荐（后端商品） ====================== */
+.consumer-mp-shell .account-recommend { margin-top: 2px; }
+.consumer-mp-shell .account-recommend-head { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 12px; }
+.consumer-mp-shell .account-recommend-head b { font-size: 16px; font-weight: 700; color: #25342e; letter-spacing: 1px; }
+.consumer-mp-shell .account-recommend-head span { font-size: 10px; color: #98a39c; letter-spacing: 2px; }
+.consumer-mp-shell .account-recommend-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.consumer-mp-shell .account-recommend-card { background: #fff; border: 1px solid #e7ece9; border-radius: 12px; overflow: hidden; text-align: left; padding: 0 0 10px; }
+.consumer-mp-shell .account-recommend-photo { display: block; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; background: #f4f7f6; }
+.consumer-mp-shell .account-recommend-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.consumer-mp-shell .account-recommend-card > b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; color: #25342e; padding: 8px 10px 0; line-height: 1.35; min-height: 35px; }
+.consumer-mp-shell .account-recommend-meta { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 10px 0; }
+.consumer-mp-shell .account-recommend-meta strong { color: #e34445; font-size: 16px; font-weight: 700; }
+.consumer-mp-shell .account-recommend-meta strong i { font-style: normal; font-size: 11px; margin-right: 1px; }
+.consumer-mp-shell .account-recommend-meta small { font-size: 10px; color: #98a39c; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.consumer-mp-shell .account-recommend-note { text-align: center; font-size: 10px; color: #98a39c; padding: 12px 0 2px; }
+
+/* ====================== 设置页（对齐小程序 settings 分组卡） ====================== */
+.st-page { display: flex; flex-direction: column; }
+.st-group { background: #fff; border: 1px solid #e7ece9; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.st-group-title { padding: 12px 14px 4px; font-size: 12px; color: #98a39c; }
+.st-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #f2f5f3; background: #fff; border-top: 0; border-left: 0; border-right: 0; text-align: left; font-size: 14px; color: #25342e; }
+.st-row:last-child { border-bottom: 0; }
+.st-row:disabled { opacity: 0.55; }
+.st-icon { flex: 0 0 30px; width: 30px; height: 30px; border-radius: 9px; background: #eaf6f2; border: 1px solid #dcebe5; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.st-label { flex: 1; min-width: 0; }
+.st-row em { font-style: normal; font-size: 13px; color: #25342e; }
+.st-row em.st-placeholder { color: #98a39c; }
+.st-toggle { flex: 0 0 44px; width: 44px; height: 26px; border-radius: 13px; background: #dfe5e2; border: 0; position: relative; transition: background 0.15s; }
+.st-toggle i { position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left 0.15s; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+.st-toggle.on { background: #118b7b; }
+.st-toggle.on i { left: 21px; }
+.st-logout { display: block; margin: 4px auto 0; padding: 10px 22px; border-radius: 12px; background: #fff; border: 1px solid #f0d9d9; color: #cb5656; font-size: 14px; }
+.mp-settings-about { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 26px 0 34px; }
+.mp-settings-about img { width: 56px; height: 56px; border-radius: 14px; }
+.mp-settings-about b { font-size: 15px; color: #25342e; }
+.mp-settings-about span { font-size: 11px; color: #98a39c; }
+.mp-settings-about small { font-size: 10px; color: #b7c0ba; }
+.st-sheet-mask { position: fixed; inset: 0; background: rgba(17, 38, 32, 0.45); z-index: 95; display: flex; align-items: flex-end; justify-content: center; }
+.st-sheet { width: 100%; max-width: 560px; background: #fff; border-radius: 18px 18px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; max-height: 70vh; overflow-y: auto; }
+.st-sheet-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; }
+.st-sheet-head b { font-size: 15px; color: #25342e; }
+.st-sheet-head button { width: 28px; height: 28px; border-radius: 50%; background: #f3f3f4; border: 0; font-size: 16px; color: #3a3d42; }
+.st-sheet-row { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 13px 6px; border-bottom: 1px solid #f2f5f3; background: #fff; border-top: 0; border-left: 0; border-right: 0; font-size: 14px; color: #25342e; }
+.st-sheet-row:last-child { border-bottom: 0; }
+.st-sheet-row.active { color: #118b7b; font-weight: 600; }
+.st-sheet-row em { font-style: normal; font-size: 11px; color: #118b7b; }
+
+/* ====================== 意见反馈 / 帮助中心 ====================== */
+.st-fb-types { display: flex; gap: 8px; padding: 8px 0; }
+.st-fb-types button { flex: 1; height: 34px; border-radius: 17px; border: 1px solid #e7ece9; background: #fff; color: #25342e; font-size: 13px; }
+.st-fb-types button.active { background: #118b7b; color: #fff; border-color: transparent; }
+.st-fb-text { width: 100%; box-sizing: border-box; border: 1px solid #e7ece9; border-radius: 10px; padding: 10px; font-size: 13px; color: #25342e; resize: none; background: #fafbfa; }
+.st-fb-contact { width: 100%; box-sizing: border-box; border: 1px solid #e7ece9; border-radius: 10px; padding: 10px; font-size: 13px; color: #25342e; margin-top: 10px; background: #fafbfa; }
+.st-fb-submit { width: 100%; height: 44px; border-radius: 22px; border: 0; background: linear-gradient(135deg, #17a08c, #0e7a6c); color: #fff; font-size: 15px; font-weight: 600; margin-top: 12px; }
+.st-fb-submit:disabled { opacity: 0.55; }
+.st-help-sheet { max-height: 80vh; }
+.st-help-empty { text-align: center; color: #98a39c; padding: 20px 0; font-size: 13px; }
+.st-faq { padding: 12px 2px; border-bottom: 1px solid #f2f5f3; }
+.st-faq b { font-size: 14px; color: #25342e; }
+.st-faq p { font-size: 13px; color: #6e7a76; line-height: 1.5; margin-top: 4px; }
+.st-help-foot { text-align: center; font-size: 11px; color: #98a39c; padding: 12px 0 2px; }
+
+/* ====================== PNG 线性图标（替换 emoji） ====================== */
+/* 设置页图标尺寸：消费端(.consumer-mp-shell)与农户端(.farmer-mp-shell)共用 st-* 组件，必须全局生效 */
+.st-icon img { width: 17px; height: 17px; object-fit: contain; display: block; }
+.consumer-mp-shell .account-top button img { width: 20px; height: 20px; object-fit: contain; }
+.consumer-mp-shell .account-shortcut-icon img { width: 23px; height: 23px; object-fit: contain; }
+.consumer-mp-shell .account-service-icon img { width: 17px; height: 17px; object-fit: contain; }
+
+/* ====================== 农户端 PNG 线性图标（替换 emoji） ====================== */
+.fmy-inline-icon { width: 15px; height: 15px; object-fit: contain; vertical-align: -2px; margin-right: 4px; }
+.fmy-grid-icon { width: 22px; height: 22px; object-fit: contain; }
+.weather-replica .weather-main > span img { width: 62px; height: 62px; object-fit: contain; display: block; }
+.st-add-row { color: #118b7b; font-weight: 600; justify-content: center; }
+.st-fb-cancel { width: 100%; height: 40px; border-radius: 20px; border: 1px solid #e7ece9; background: #fff; color: #6e7a76; font-size: 13px; margin-top: 8px; }

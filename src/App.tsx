@@ -1,4 +1,7 @@
 ﻿import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import {
   Bell,
   Bot,
@@ -9,6 +12,7 @@ import {
   ClipboardCheck,
   Clock3,
   CloudSun,
+  Droplets,
   Flame,
   Gift,
   Home,
@@ -22,7 +26,6 @@ import {
   Settings,
   ShoppingCart,
   Sprout,
-  Star,
   Store,
   Truck,
   UserRound,
@@ -45,6 +48,8 @@ import {
   askAi,
   addCartItem,
   clearSession,
+  cancelOrder,
+  completeTestPayment,
   createAddress,
   createOrder,
   deleteAddress,
@@ -53,10 +58,9 @@ import {
   fetchCurrentUser,
   fetchOrders,
   getStoredSession,
-  loginWithSms,
-  isMockLoginEnabled,
+  passwordLogin,
+  register,
   removeCartItem as removeCartItemApi,
-  sendLoginCode,
   updateAddress,
   updateCartItem,
   Address,
@@ -70,19 +74,199 @@ import {
   CategoryId,
   ApiDataSource,
   AppCategory,
+  fetchFarmerProducts,
+  createFarmerProduct,
+  submitFarmerProduct,
+  offShelfFarmerProduct,
+  fetchFarmerCrops,
+  fetchFarmTasks,
+  createFarmTask,
+  completeFarmTask,
+  deleteFarmTask,
+  fetchEnvironmentStations,
+  fetchEnvironmentDevices,
+  fetchEnvironmentAlerts,
+  fetchEnvironmentVideoStreams,
+  createEnvironmentStation,
+  toggleEnvironmentDevice,
+  fetchFarmerDevices,
+  setFarmerDeviceEnabled,
+  fetchFarmerOrders,
+  shipFarmerOrder,
+  fetchFarmerWarnings,
+  fetchWeather,
+  fetchCommunityPosts,
+  createCommunityPost,
+  likeCommunityPost,
+  fetchTechExperts,
+  TechSupportExpert,
+  analyzeDisease,
+  createAdoptionOrder,
+  fetchAdoptionOrders,
+  fetchAdoptionOrderDetail,
+  fetchFarmerAdoptionOrders,
+  shipFarmerAdoptionOrder,
+  fetchConversations,
+  fetchConversationMessages,
+  sendConversationMessage,
+  createConversation,
+  fetchSupportHistory,
+  sendSupportMessage,
+  FarmerCrop,
+  FarmTask,
+  FarmerDevice,
+  FarmerWarning,
+  CommunityPost,
+  FarmerOrder,
+  AdoptionOrder,
+  FarmerAdoptionList,
+  FarmerAdoptionOrder,
+  Conversation,
+  ChatMessage,
+  SupportMessage,
+  SessionUser,
+  WeatherInfo,
+  fetchRepairs,
+  fetchBookings,
+  fetchDeviceTypes,
+  fetchFaultOptions,
+  createDeviceRepair,
+  fetchDroneServices,
+  bookDroneService,
+  fetchMachineTypes,
+  bookMachineService,
+  consultExpert,
+  fetchTechContact,
+  fetchEnvironmentOverview,
+  fetchEnvironmentSensors,
+  fetchEnvironmentAutoTasks,
+  toggleEnvironmentAutoTask,
+  fetchEnvironmentIrrigation,
+  toggleEnvironmentIrrigation,
+  fetchEnvironmentChart,
+  TechRepair,
+  TechBooking,
+  TechContactInfo,
+  EnvironmentOverview,
+  EnvironmentStation,
+  EnvironmentVideoStream,
+  EnvironmentSensor,
+  EnvironmentAutoTask,
+  EnvironmentIrrigation,
+  EnvironmentAlert,
+  fetchMemberSummary,
+  checkinMember,
+  fetchPointsRecords,
+  fetchFavorites,
+  toggleFavorite,
+  fetchFootprints,
+  deleteFootprint,
+  clearFootprints,
+  MemberSummary,
+  PointsRecord,
+  FootprintItem,
+  fetchUserSettings,
+  updateUserSettings,
+  updateProfile,
+  changePassword,
+  UserSettings,
+  submitFeedback,
+  fetchFaqs,
+  Faq,
+  fetchRawCategories,
+  RawCategory,
+  fetchRegionContent,
+  resolveRegion,
+  uploadImageBase64,
+  imageURL,
+  RegionFeed,
 } from './api';
 
 type Screen = 'splash' | 'identity' | 'login' | 'consumer' | 'farmer';
-type ConsumerPage = 'tabs' | 'mall' | 'trace' | 'productDetail' | 'cart' | 'checkout' | 'paySuccess' | 'orders' | 'orderDetail' | 'address' | 'messages' | 'service' | 'settings' | 'privacy' | 'adoptDetail' | 'adoptConfirm' | 'adoptSuccess' | 'traceResult';
-type FarmerPage = 'tabs' | 'myCrops' | 'cropDetail' | 'warningCenter' | 'adoptionCenter' | 'myDevice' | 'techSupport' | 'weatherDetail' | 'voiceAssistant' | 'locationMap' | 'community' | 'farmerSettings' | 'farmerOrders' | 'farmerOrderDetail';
+type ConsumerPage = 'tabs' | 'mall' | 'trace' | 'productDetail' | 'cart' | 'checkout' | 'paySuccess' | 'orders' | 'orderDetail' | 'address' | 'messages' | 'service' | 'settings' | 'privacy' | 'general' | 'member' | 'favorites' | 'footprints' | 'adoptDetail' | 'adoptConfirm' | 'adoptSuccess' | 'traceResult' | 'region' | 'regionContent';
+/** 收货地区：用于结算与配送，localStorage key。 */
+const REGION_STORAGE_KEY = 'yunlu.home.region';
+/** 地域内容推荐地区：只影响首页地域流，localStorage key。 */
+const CONTENT_REGION_STORAGE_KEY = 'yunlu.home.contentRegion';
+type StoredRegion = { province?: string; city?: string; district?: string; label?: string };
+/** 从 localStorage 读取一个地区对象，读取失败时返回 null。 */
+function readStoredRegion(key: string): StoredRegion | null {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+/** 把地区对象写入 localStorage，写入失败时静默忽略。 */
+function writeStoredRegion(key: string, value: StoredRegion): void {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 存储不可用时忽略 */ }
+}
+
+/** 经纬度坐标。 */
+type GeoCoords = { latitude: number; longitude: number };
+/** 原生定位单次取点的超时时间（毫秒）。 */
+const NATIVE_LOCATE_TIMEOUT = 6000;
+/** WebView 降级定位的超时时间（毫秒）。 */
+const WEB_LOCATE_TIMEOUT = 4000;
+
+/** 从任意定位结果中提取经纬度，字段缺失时返回 null。 */
+function toGeoCoords(position: { coords?: { latitude?: number; longitude?: number } } | null | undefined): GeoCoords | null {
+  const latitude = position?.coords?.latitude;
+  const longitude = position?.coords?.longitude;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
+  return { latitude, longitude };
+}
+
+/**
+ * 降级方案：使用浏览器 / WebView 自带的 navigator.geolocation。
+ * 无论成功、拒绝还是超时都会 resolve，绝不挂起。
+ */
+function resolveCoordsViaNavigator(): Promise<GeoCoords | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise<GeoCoords | null>((resolve) => {
+    let settled = false;
+    const done = (coords: GeoCoords | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(coords);
+    };
+    navigator.geolocation.getCurrentPosition(
+      (position) => done(toGeoCoords(position)),
+      () => done(null),
+      { timeout: WEB_LOCATE_TIMEOUT, enableHighAccuracy: false, maximumAge: 60000 }
+    );
+  });
+}
+
+/**
+ * 获取当前位置经纬度，用于地域内容推荐。
+ * 优先级：① Capacitor Geolocation 原生插件（真机可用，自动申请运行时权限）
+ *        ② WebView 的 navigator.geolocation（浏览器 / 插件不可用时）
+ * 任一步失败都不会抛错，最终返回 null，由调用方提示用户手动选择，不阻塞交互。
+ */
+async function resolveCurrentCoords(): Promise<GeoCoords | null> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const status = await Geolocation.requestPermissions();
+      if (status.location !== 'denied' || status.coarseLocation !== 'denied') {
+        const coords = toGeoCoords(await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: NATIVE_LOCATE_TIMEOUT }));
+        if (coords) return coords;
+      }
+    } catch { /* 原生定位不可用或用户拒绝，降级继续 */ }
+  } else {
+    try {
+      const coords = toGeoCoords(await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: NATIVE_LOCATE_TIMEOUT }));
+      if (coords) return coords;
+    } catch { /* WebView 插件定位失败，降级继续 */ }
+  }
+  return resolveCoordsViaNavigator();
+}
+
+type FarmerPage = 'tabs' | 'myCrops' | 'cropDetail' | 'warningCenter' | 'adoptionCenter' | 'myDevice' | 'techSupport' | 'weatherDetail' | 'voiceAssistant' | 'locationMap' | 'community' | 'farmerSettings' | 'farmerGeneral' | 'farmerAddress' | 'farmerPrivacy' | 'farmerOrders' | 'farmerOrderDetail' | 'myOrders';
 type CartItem = { cartId?: number; product: Product; quantity: number; spec: string };
 
 const consumerTabs: Array<{ id: ConsumerTab; label: string; icon: typeof Home }> = [
   { id: 'home', label: '首页', icon: Home },
   { id: 'adopt', label: '云认养', icon: Sprout },
-  { id: 'assistant', label: 'AI 小满', icon: Bot },
+  { id: 'assistant', label: '小露', icon: Bot },
   { id: 'cart', label: '购物车', icon: ShoppingCart },
-  { id: 'my', label: '我的', icon: UserRound }
+  { id: 'my', label: '个人中心', icon: UserRound }
 ];
 
 const farmerTabs: Array<{ id: FarmerTab; label: string; icon: typeof Home }> = [
@@ -94,7 +278,7 @@ const farmerTabs: Array<{ id: FarmerTab; label: string; icon: typeof Home }> = [
 ];
 
 const consumerHomeStyle: 'current' | 'hema' = 'current';
-const appName = '小满合';
+const appName = '耘露';
 const today = new Date();
 const todayYear = today.getFullYear();
 const todayMonth = today.getMonth() + 1;
@@ -108,9 +292,10 @@ const currentMonthTitle = `${todayYear}年${todayMonth}月`;
 
 // 模块级默认产品和安全访问工具
 const DEFAULT_PRODUCT: Product = {
-  id: 0, name: '加载中...', origin: '', category: 'local' as CategoryId, category_id: 6,
-  category_name: '', unit: '', image: '', tag: '', price: 0, originalPrice: 0,
-  sales: '0', description: '',
+  id: '', name: '加载中...', origin: '', category: 'local' as CategoryId, category_id: 6,
+  category_name: '', unit: '', image: '', coverImage: '', images: [], tag: '', price: 0, originalPrice: 0,
+  priceText: '', priceFen: 0, sales: '0', stock: 0, description: '', isOnSale: false, purchasable: false,
+  catalogueOnly: false, status: 0, source: '', favorited: false,
 };
 const createSafeProduct = (products: Product[]) => (idx: number): Product => products[idx] || DEFAULT_PRODUCT;
 
@@ -155,12 +340,17 @@ export function App() {
   const [consumerAiPosition, setConsumerAiPosition] = useState<{ x: number; y: number } | null>(null);
   const [consumerTab, setConsumerTab] = useState<ConsumerTab>('home');
   const [farmerTab, setFarmerTab] = useState<FarmerTab>('farmHome');
-  const [category, setCategory] = useState<CategoryId>('all');
+  const [category, setCategory] = useState<string>('');
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [showAi, setShowAi] = useState(false);
 
   // ---- API 数据 ----
   const [products, setProducts] = useState<Product[]>([]);
   const [appCategories, setAppCategories] = useState<AppCategory[]>(APP_CATEGORIES);
+  const [rawCategories, setRawCategories] = useState<RawCategory[]>([]);
+  const [paySheet, setPaySheet] = useState<{ orderId: number; amount: number } | null>(null);
+  const [payingMethod, setPayingMethod] = useState<string | null>(null);
+  const [profileEditor, setProfileEditor] = useState<Role | null>(null);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [adopts, setAdopts] = useState<AdoptItem[]>([]);
   const [postsData, setPostsData] = useState<PostItem[]>([]);
@@ -176,18 +366,19 @@ export function App() {
     async function loadAll() {
       try {
         setProductError('');
-        const [productResult, categoryResult, b, adoptionResult, po, ta] = await Promise.all([
+        const [productResult, categoryResult, b, adoptionResult, po, ta, rawCategoriesData] = await Promise.all([
           fetchProductData().catch((error) => {
             console.error('[PRODUCT API ERROR]', error);
             setProductError(String(error));
             return { value: [], source: 'unavailable' as ApiDataSource, fallbackReason: '商品数据加载失败' };
           }), fetchMobileCategories(), fetchBanners(), fetchAdoptionPackageData(),
-          fetchPosts(), fetchTasks(),
+          fetchPosts(), fetchTasks(), fetchRawCategories().catch(() => [] as RawCategory[]),
         ]);
         setProducts(productResult.value);
         setProductSource(productResult.source);
         setProductError(productResult.fallbackReason || '');
         setAppCategories(categoryResult.value);
+        setRawCategories(rawCategoriesData);
         setCategorySource(categoryResult.source);
         setBanners(b);
         setAdopts(adoptionResult.value);
@@ -248,7 +439,17 @@ export function App() {
     setConsumerTab(tab);
   };
   const openConsumerCart = () => navigateConsumerTab('cart');
+  const requireLogin = () => {
+    if (session) return true;
+    notify('请先登录');
+    setScreen('login');
+    return false;
+  };
+  const refreshSession = () => {
+    fetchCurrentUser().then((u) => setSession((prev) => (prev ? { ...prev, ...u, token: prev.token } : u))).catch(() => {});
+  };
   const checkout = () => {
+    if (!requireLogin()) return;
     if (!selectedAddress) {
       notify('请先新增并选择收货地址');
       setConsumerPage('address');
@@ -256,10 +457,48 @@ export function App() {
     }
     setConsumerPage('checkout');
   };
+  const paySheetOrder = (order: OrderRecord) => {
+    setActiveOrder(order);
+    setPaySheet({ orderId: order.id, amount: order.totalAmount });
+  };
+  const closePaySheet = () => {
+    const orderId = paySheet?.orderId;
+    setPaySheet(null);
+    setPayingMethod(null);
+    if (orderId !== undefined) setConsumerPage('orderDetail');
+  };
+  const confirmPay = async (method: 'wechat' | 'alipay') => {
+    if (!paySheet || payingMethod) return;
+    setPayingMethod(method);
+    try {
+      await completeTestPayment(paySheet.orderId, method);
+      const nextOrders = await fetchOrders();
+      setOrders(nextOrders);
+      setActiveOrder(nextOrders.find((item) => item.id === paySheet.orderId) || null);
+      setPaySheet(null);
+      setPayingMethod(null);
+      notify('支付成功');
+      setConsumerPage('orderDetail');
+    } catch (error) {
+      setPayingMethod(null);
+      notify(error instanceof Error ? error.message : '支付失败，请重试');
+    }
+  };
+  const cancelOrderById = async (order: { id: number }) => {
+    try {
+      await cancelOrder(order.id);
+      const nextOrders = await fetchOrders();
+      setOrders(nextOrders);
+      setActiveOrder(nextOrders.find((item) => item.id === order.id) || null);
+      notify('订单已取消');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '订单取消失败');
+    }
+  };
 
   const filteredProducts = useMemo(
-    () => (category === 'all' ? products : products.filter((item) => item.category === category)),
-    [category, products]
+    () => products.filter((item) => (category === '' || category === 'all' || String(item.category_id) === category) && (!searchKeyword.trim() || item.name.includes(searchKeyword.trim()) || (item.origin || '').includes(searchKeyword.trim()))),
+    [category, products, searchKeyword]
   );
 
   const loadTradeData = async () => {
@@ -368,7 +607,7 @@ export function App() {
     }, 850);
   };
 
-  const updateCartQuantity = async (productId: number, spec: string, nextQuantity: number) => {
+  const updateCartQuantity = async (productId: string, spec: string, nextQuantity: number) => {
     const item = cartItems.find((row) => row.product.id === productId && row.spec === spec);
     if (!item?.cartId) return notify('购物车数据尚未同步');
     try {
@@ -379,7 +618,7 @@ export function App() {
     }
   };
 
-  const removeCartItem = async (productId: number, spec: string) => {
+  const removeCartItem = async (productId: string, spec: string) => {
     const item = cartItems.find((row) => row.product.id === productId && row.spec === spec);
     if (!item?.cartId) return notify('购物车数据尚未同步');
     try {
@@ -403,6 +642,8 @@ export function App() {
         }} />}
         {screen === 'identity' && <Identity onSelect={enterRole} />}
         {screen === 'login' && <Login role={role} onBack={() => setScreen('identity')} onDone={completeLogin} />}
+        {paySheet && screen === 'consumer' && <PaySheet amount={paySheet.amount} busy={payingMethod} onClose={closePaySheet} onPay={confirmPay} />}
+        {profileEditor && <ProfileEditPage role={profileEditor} onClose={() => setProfileEditor(null)} notify={notify} />}
         {screen === 'consumer' && (
           <AppLayout
             title={appName}
@@ -417,13 +658,13 @@ export function App() {
             hideTabbar={consumerPage !== 'tabs'}
             variant="consumer-mp-shell"
           >
-            {consumerPage === 'tabs' && consumerTab === 'home' && <ConsumerHome onTab={navigateConsumerTab} notify={notify} onProduct={(item) => { setSelectedProduct(item); setConsumerPage('productDetail'); }} products={products} source={productSource} loading={dataLoading} error={productError} />}
-            {consumerPage === 'tabs' && consumerTab === 'mall' && <Mall category={category} setCategory={setCategory} categories={appCategories} products={filteredProducts} productError={productError} source={productSource} categorySource={categorySource} canPurchase={productSource === 'real'} notify={notify} onAddCart={async (item) => { try { await addCartItem(item.id); await loadTradeData(); notify('已加入购物车'); } catch (error) { notify(error instanceof Error ? error.message : '加入购物车失败'); } }} onProduct={(item) => { setSelectedProduct(item); setConsumerPage('productDetail'); }} />}
+            {consumerPage === 'tabs' && consumerTab === 'home' && <ConsumerHome onTab={navigateConsumerTab} notify={notify} onProduct={(item) => { setSelectedProduct(item); setConsumerPage('productDetail'); }} products={products} source={productSource} loading={dataLoading} error={productError} banners={banners} categories={appCategories} onOpenPage={setConsumerPage} onMallCategory={(cat) => { setCategory(cat); setConsumerTab('mall'); }} onSearch={(kw) => { setSearchKeyword(kw); setCategory(''); setConsumerTab('mall'); }} onAddCart={async (item) => { if (!requireLogin()) return; try { await addCartItem(item.id); await loadTradeData(); notify('已加入购物车'); } catch (error) { notify(error instanceof Error ? error.message : '加入购物车失败'); } }} />}
+            {consumerPage === 'tabs' && consumerTab === 'mall' && <Mall category={category} setCategory={setCategory} categories={rawCategories} products={filteredProducts} onOpenCart={openConsumerCart} onBack={() => setConsumerTab('home')} productError={productError} source={productSource} categorySource={categorySource} canPurchase={productSource === 'real'} notify={notify} onAddCart={async (item) => { if (!requireLogin()) return; try { await addCartItem(item.id); await loadTradeData(); notify('已加入购物车'); } catch (error) { notify(error instanceof Error ? error.message : '加入购物车失败'); } }} onProduct={(item) => { setSelectedProduct(item); setConsumerPage('productDetail'); }} />}
             {consumerPage === 'tabs' && consumerTab === 'trace' && <Trace onResult={() => setConsumerPage('traceResult')} notify={notify} traceTimeline={traceTimeline} safeProduct={safeProduct} onTraceResult={(result) => { setTraceTimeline(result.events); }} />}
             {consumerPage === 'tabs' && consumerTab === 'adopt' && <AdoptV2 onDetail={() => setConsumerPage('adoptDetail')} notify={notify} projects={adopts} source={adoptionSource} />}
             {consumerPage === 'tabs' && consumerTab === 'assistant' && <AiPanel pageMode onClose={() => setConsumerTab('home')} onCart={openConsumerCart} onPage={setConsumerPage} />}
             {consumerPage === 'tabs' && consumerTab === 'cart' && <div className="consumer-cart-tab"><div className="consumer-tab-title">购物车</div><CartPage cartItems={cartItems} onCheckout={checkout} onShop={() => setConsumerTab('home')} onUpdateQuantity={updateCartQuantity} onRemove={removeCartItem} /></div>}
-            {consumerPage === 'tabs' && consumerTab === 'my' && <Profile role="consumer" onSwitch={openRoleSwitchConfirm} onOpenConsumerPage={setConsumerPage} onLogin={() => setScreen('login')} loggedIn={Boolean(session)} safeProduct={safeProduct} />}
+            {consumerPage === 'tabs' && consumerTab === 'my' && <Profile role="consumer" onSwitch={openRoleSwitchConfirm} onOpenConsumerPage={setConsumerPage} onLogin={() => setScreen('login')} loggedIn={Boolean(session)} session={session} safeProduct={safeProduct} orders={orders} onEditProfile={() => setProfileEditor('consumer')} recommendProducts={products} onProduct={(item) => { setSelectedProduct(item); setConsumerPage('productDetail'); }} />}
             {consumerPage !== 'tabs' && (
               <ConsumerSubPage
                 page={consumerPage}
@@ -432,7 +673,7 @@ export function App() {
                 safeProduct={safeProduct}
                 traceTimeline={traceTimeline}
                 products={filteredProducts}
-                categories={appCategories}
+                categories={rawCategories}
                 productError={productError}
                 productSource={productSource}
                 categorySource={categorySource}
@@ -445,6 +686,7 @@ export function App() {
                 onCartTab={openConsumerCart}
                 onPage={setConsumerPage}
                 onAddCart={async (item) => {
+                  if (!requireLogin()) return;
                   try {
                     await addCartItem(item.id);
                     await loadTradeData();
@@ -470,19 +712,22 @@ export function App() {
                     await loadTradeData();
                     const nextOrders = await fetchOrders();
                     setOrders(nextOrders);
-                    const order = nextOrders.find((item) => item.id === created.orderId) || null;
-                    setActiveOrder(order);
-                    setConsumerPage(order ? 'orderDetail' : 'orders');
-                    notify('订单已提交，付款与配送状态以实际服务信息为准');
+                    setActiveOrder(nextOrders.find((item) => item.id === created.orderId) || null);
+                    setPaySheet({ orderId: created.orderId, amount: created.totalAmount });
                   } catch (error) {
                     notify(error instanceof Error ? error.message : '订单提交失败');
                   }
                 }}
+                onPayOrder={paySheetOrder}
+                onCancelOrder={cancelOrderById}
+                onEditProfile={() => setProfileEditor('consumer')}
+                onProfileChanged={refreshSession}
                 notify={notify}
                 onLogout={logoutConsumer}
                 onIdentity={openRoleSwitchConfirm}
                 onLogin={() => setScreen('login')}
                 loggedIn={Boolean(session)}
+                adopts={adopts}
               />
             )}
           </AppLayout>
@@ -505,9 +750,9 @@ export function App() {
             {farmerPage === 'tabs' && farmerTab === 'farmHome' && <FarmerHomeMP onTab={setFarmerTab} onPage={setFarmerPage} />}
             {farmerPage === 'tabs' && farmerTab === 'shop' && <FarmerShopMP onPage={setFarmerPage} notify={notify} />}
             {farmerPage === 'tabs' && farmerTab === 'farming' && <FarmingMP />}
-            {farmerPage === 'tabs' && farmerTab === 'environment' && <EnvironmentMP onPage={setFarmerPage} />}
-            {farmerPage === 'tabs' && farmerTab === 'farmerMy' && <Profile role="farmer" onSwitch={openRoleSwitchConfirm} onOpenFarmerPage={setFarmerPage} safeProduct={safeProduct} />}
-            {farmerPage !== 'tabs' && <FarmerSubPageMP page={farmerPage} onBack={() => setFarmerPage('tabs')} onPage={setFarmerPage} />}
+            {farmerPage === 'tabs' && farmerTab === 'environment' && <EnvironmentMP onPage={setFarmerPage} notify={notify} />}
+            {farmerPage === 'tabs' && farmerTab === 'farmerMy' && <Profile role="farmer" onSwitch={openRoleSwitchConfirm} onOpenFarmerPage={setFarmerPage} onLogin={() => setScreen('login')} loggedIn={Boolean(session)} session={session} safeProduct={safeProduct} onEditProfile={() => setProfileEditor('farmer')} />}
+            {farmerPage !== 'tabs' && <FarmerSubPageMP page={farmerPage} onBack={() => setFarmerPage('tabs')} onPage={setFarmerPage} nickname={session?.nickname} loggedIn={Boolean(session)} onSwitch={openRoleSwitchConfirm} onOpenGeneral={() => setFarmerPage('farmerGeneral')} onLogout={logoutConsumer} onEditProfile={() => setProfileEditor('farmer')} onAddress={() => setFarmerPage('farmerAddress')} onPrivacy={() => setFarmerPage('farmerPrivacy')} onProfileChanged={refreshSession} onLogin={() => setScreen('login')} notify={notify} addresses={addresses} selectedAddress={selectedAddress} onSelectAddress={setSelectedAddress} onAddressesChanged={() => loadTradeData()} />}
           </AppLayout>
         )}
         {screen === 'farmer' && !showAi && (
@@ -554,7 +799,7 @@ function RoleSwitchConfirm({
   return (
     <div className="role-switch-mask" onClick={onCancel}>
       <section className="role-switch-card" onClick={(event) => event.stopPropagation()}>
-        <div className="role-switch-icon">{targetRole === 'farmer' ? '🌾' : '🛒'}</div>
+        <div className="role-switch-icon"><img src={targetRole === 'farmer' ? '/assets/icons/icon-rice.png' : '/assets/icons/icon-cart.png'} alt="" /></div>
         <span>身份切换确认</span>
         <h3>从{currentLabel}切换到{targetLabel}</h3>
         <p>{targetDesc}</p>
@@ -598,11 +843,11 @@ function Splash({ onStart }: { onStart: () => void }) {
       <div className="splash-circle c2" />
       <div className="splash-circle c3" />
       <div className="splash-main">
-        <img className="brand-logo" src="/assets/logo.png" alt={appName} />
+        <img className="brand-logo" src="/assets/brand-logo.png" alt={appName} />
         <h1>{appName}</h1>
         <p>让农业更智慧，让生活更美好</p>
         <div className="loading-track"><span style={{ width: `${progress}%` }} /></div>
-        <small>{progress < 100 ? '正在准备小满合...' : '准备进入'}</small>
+        <small>{progress < 100 ? '正在准备耘露...' : '准备进入'}</small>
       </div>
       <div className="splash-footer-text">新鲜农货 · 云认养体验 · 农事记录</div>
       <i className="falling-leaf l1">🌿</i>
@@ -616,7 +861,7 @@ function Splash({ onStart }: { onStart: () => void }) {
 function Identity({ onSelect }: { onSelect: (role: Role) => void }) {
   return (
     <section className="identity page-full">
-      <img className="brand-logo sm" src="/assets/logo.png" alt="" />
+      <img className="brand-logo sm" src="/assets/brand-logo.png" alt="" />
       <h2>选择你的身份</h2>
       <p className="muted">不同身份会进入不同工作台</p>
       <button className="identity-card consumer" onClick={() => onSelect('consumer')}>
@@ -635,54 +880,43 @@ function Identity({ onSelect }: { onSelect: (role: Role) => void }) {
 
 function Login({ role, onBack, onDone }: { role: Role; onBack: () => void; onDone: () => void }) {
   const [submitting, setSubmitting] = useState(false);
-  const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
-  const [countdown, setCountdown] = useState(0);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [agreed, setAgreed] = useState(false);
   const [loginHint, setLoginHint] = useState('');
 
-  useEffect(() => {
-    if (!countdown) return;
-    const timer = window.setTimeout(() => setCountdown((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [countdown]);
-
-  const sendCode = async () => {
-    if (!/^1\d{10}$/.test(phone)) {
-      setLoginHint('请输入正确的 11 位手机号');
-      return;
-    }
-    try {
-      const result = await sendLoginCode(phone);
-      setCountdown(60);
-      setLoginHint(result.debugCode ? `验证码已发送，开发测试码：${result.debugCode}` : '验证码已发送，请查收短信');
-    } catch (error) {
-      setLoginHint(error instanceof Error ? error.message : '验证码发送失败');
-    }
-  };
-
-  const submit = async (method: 'code' | 'wechat' | 'alipay' = 'code') => {
+  const submit = async () => {
     if (submitting) return;
     if (!agreed) {
       setLoginHint('请先阅读并同意服务协议');
       return;
     }
-    if (method === 'code' && !isMockLoginEnabled && (!/^1\d{10}$/.test(phone) || code.trim().length < 4)) {
-      setLoginHint('请输入手机号和验证码');
+    const name = username.trim();
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(name)) {
+      setLoginHint('请输入正确的手机号');
+      return;
+    }
+    if (!password || password.length < 6 || password.length > 20) {
+      setLoginHint('密码需为 6-20 位');
+      return;
+    }
+    if (mode === 'register' && password !== confirmPassword) {
+      setLoginHint('两次输入的密码不一致');
       return;
     }
     setSubmitting(true);
-    if (method !== 'code') {
-      setSubmitting(false);
-      setLoginHint('当前交易链路仅开放短信登录');
-      return;
-    }
-    setLoginHint('正在校验验证码...');
+    setLoginHint(mode === 'register' ? '正在注册...' : '正在登录...');
     try {
-      await loginWithSms(phone || '13800000000', code.trim() || '0000', role);
+      if (mode === 'register') {
+        await register(name, password, role);
+      } else {
+        await passwordLogin(name, password);
+      }
       onDone();
     } catch (error) {
-      setLoginHint(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      setLoginHint(error instanceof Error ? error.message : '操作失败，请稍后重试');
     } finally {
       setSubmitting(false);
     }
@@ -692,14 +926,24 @@ function Login({ role, onBack, onDone }: { role: Role; onBack: () => void; onDon
     <section className="login page-full">
       <button className="ghost-back" onClick={onBack}><ChevronLeft size={18} />返回</button>
       <h2>{role === 'consumer' ? '欢迎回来，消费者' : '欢迎回来，农户朋友'}</h2>
-      <p className="muted">登录{appName}，开启智慧农业新体验</p>
+      <p className="muted">{mode === 'register' ? '注册' : '登录'}{appName}，开启智慧农业新体验</p>
       <div className="form-card">
-        <label>手机号<input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="请输入手机号" inputMode="numeric" /></label>
-        <label className="code-row">验证码<span><input value={code} onChange={(event) => setCode(event.target.value)} placeholder="请输入验证码" inputMode="numeric" /><button onClick={sendCode}>{countdown ? `${countdown}s` : '获取验证码'}</button></span></label>
-        <button className={`primary-btn wide ${submitting ? 'loading' : ''}`} onClick={() => submit()}>{submitting ? '正在进入...' : '一键登录'}</button>
+        <label>手机号<input value={username} onChange={(event) => setUsername(event.target.value)} placeholder={mode === 'register' ? '设置手机号' : '请输入手机号'} /></label>
+        <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={mode === 'register' ? '设置密码（6-20 位）' : '请输入密码'} /></label>
+        {mode === 'register' && <label>确认密码<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入密码" /></label>}
+        <button className={`primary-btn wide ${submitting ? 'loading' : ''}`} onClick={submit}>{submitting ? '请稍候...' : mode === 'register' ? '注册并进入' : '登录'}</button>
+        <button className="link-btn" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setLoginHint(''); }}>{mode === 'login' ? '没有账号？去注册' : '已有账号？去登录'}</button>
+        {mode === 'login' && (
+          <div className="oauth-row">
+            <span className="oauth-divider">其他登录方式</span>
+            <div className="oauth-btns">
+              <button className="oauth-btn" onClick={() => setLoginHint('微信登录即将上线，敬请期待')}>微信登录</button>
+              <button className="oauth-btn" onClick={() => setLoginHint('支付宝登录即将上线，敬请期待')}>支付宝登录</button>
+            </div>
+          </div>
+        )}
         <button className={`agreement ${agreed ? 'checked' : ''}`} onClick={() => setAgreed((value) => !value)}><i />已阅读并同意《隐私服务协议》《用户服务协议》</button>
         {loginHint && <p className="login-hint">{loginHint}</p>}
-        <p className="login-hint">{isMockLoginEnabled ? '本地测试包：同意协议后可直接进入，无需真实验证码' : '当前仅开通短信验证码登录'}</p>
       </div>
     </section>
   );
@@ -804,28 +1048,133 @@ function AppLayout({
   );
 }
 
-function ConsumerHome({ onTab, onProduct, notify, products, source, loading, error }: { onTab: (tab: ConsumerTab) => void; onProduct: (item: Product) => void; notify: (message: string) => void; products: Product[]; source: ApiDataSource; loading: boolean; error: string }) {
+const HOME_BANNERS: Array<{ id: string; image: string; title: string; target: 'seasonal' | 'adopt' | 'trace' | 'mall' | 'category' }> = [
+  { id: 'banner-fresh', image: '/assets/miniprogram/banners/banner-fresh.jpg', title: '产地直连 把新鲜带回家', target: 'seasonal' },
+  { id: 'banner-v5-mango', image: '/assets/miniprogram/banners/banner-v5-mango.jpg', title: '时令鲜果 果园现摘', target: 'seasonal' },
+  { id: 'banner-adopt', image: '/assets/miniprogram/banners/banner-adopt.jpg', title: '云认养 见证生长', target: 'adopt' },
+  { id: 'banner-v5-apple', image: '/assets/miniprogram/banners/banner-v5-apple.jpg', title: '枝头到舌尖 只差一键', target: 'seasonal' },
+  { id: 'banner-own', image: '/assets/miniprogram/banners/banner-own.jpg', title: '耘露优选 自有品牌', target: 'category' },
+  { id: 'banner-v5-veggie', image: '/assets/miniprogram/banners/banner-v5-veggie.jpg', title: '时令蔬菜 每日现采', target: 'seasonal' },
+  { id: 'banner-reference-v4', image: '/assets/miniprogram/banners/banner-reference-v4.jpg', title: '耘露好物 轻松挑选', target: 'mall' }
+];
+function ConsumerHome({ onTab, onProduct, notify, products, source, loading, error, banners, categories, onOpenPage, onMallCategory, onSearch, onAddCart }: { onTab: (tab: ConsumerTab) => void; onProduct: (item: Product) => void; notify: (message: string) => void; products: Product[]; source: ApiDataSource; loading: boolean; error: string; banners: Banner[]; categories: RawCategory[]; onOpenPage: (page: ConsumerPage) => void; onMallCategory: (categoryId: string) => void; onSearch: (keyword: string) => void; onAddCart: (item: Product) => Promise<void> | void }) {
   const [keyword, setKeyword] = useState('');
+  const [bannerIndex, setBannerIndex] = useState(0);
+  const [regionFeed, setRegionFeed] = useState<RegionFeed | null>(null);
+  // region = 收货地区（结算/配送用）；contentRegion = 地域内容推荐地区（只影响首页地域流）
+  const [region] = useState<StoredRegion | null>(() => readStoredRegion(REGION_STORAGE_KEY));
+  const [contentRegion] = useState<StoredRegion | null>(() => readStoredRegion(CONTENT_REGION_STORAGE_KEY));
+  const [homeCategories, setHomeCategories] = useState<RawCategory[]>([]);
   const catalogOnly = source !== 'real';
   const displayed = products.slice(0, 8);
-  const categories = [
-    { label: '时令鲜蔬', icon: 'leaf.png' }, { label: '当季水果', icon: 'sun.png' },
-    { label: '粮油主食', icon: 'bag.png' }, { label: '地方农货', icon: 'pin.png' },
-    { label: '走进农场', icon: 'home.png' }, { label: '生长日记', icon: 'camera.png' },
-    { label: '商品图册', icon: 'mall.png' }, { label: '我的关注', icon: 'heart.png' }
+  const homeBanners: Array<{ id?: string; image: string; title: string; sub?: string; target?: string }> = [...HOME_BANNERS, ...(banners || [])];
+  const smartServices = [
+    { label: 'AI 农事问答', sub: '小露帮你挑', icon: Bot, action: () => onTab('assistant') },
+    { label: '一物一码溯源', sub: '来源可查', icon: ScanLine, action: () => onTab('trace') },
+    { label: '云认养农田', sub: '见证生长', icon: Sprout, action: () => onTab('adopt') },
+    { label: '数字农田', sub: '环境实时监测', icon: CloudSun, action: () => onTab('mall') }
   ];
+  const openBannerTarget = (banner: { target?: string; targetId?: string }) => {
+    if (banner.target === 'adopt') onTab('adopt');
+    else if (banner.target === 'trace') onTab('trace');
+    else if (banner.target === 'category') onMallCategory('');
+    else onTab('mall');
+  };
+  const openRegionItem = (item: { actionType?: string; actionTarget?: string }) => {
+    const action = item.actionType || 'none';
+    if (action === 'adopt') onTab('adopt');
+    else if (action === 'trace') onTab('trace');
+    else onTab('mall');
+  };
+  // 地域流优先用「切换地区」选中的推荐地区，未设置时回退到收货地区
+  const feedProvince = contentRegion?.province || region?.province || undefined;
+  const feedCity = contentRegion?.city || undefined;
+  useEffect(() => {
+    let alive = true;
+    fetchRegionContent(feedProvince, feedCity).then((feed) => { if (alive) setRegionFeed(feed); }).catch(() => {});
+    fetchRawCategories().then((list) => { if (alive && list.length) setHomeCategories(list); }).catch(() => {});
+    return () => { alive = false; };
+  }, [feedProvince, feedCity]);
+  useEffect(() => {
+    if (homeBanners.length <= 1) return;
+    const timer = window.setInterval(() => setBannerIndex((index) => (index + 1) % homeBanners.length), 4200);
+    return () => window.clearInterval(timer);
+  }, [homeBanners.length]);
   return <div className="mp-consumer-home">
     <header className="mp-home-head">
-      <div className="mp-home-nav"><button onClick={() => notify('地区服务暂未接入')}><img src="/assets/miniprogram/farmer-icons/pin.png" alt=""/>选择收货地区⌄</button><button onClick={() => notify('消息服务暂未接入')}><img src="/assets/miniprogram/farmer-icons/chat.png" alt=""/>消息</button></div>
-      <form className="mp-home-search" onSubmit={(event) => { event.preventDefault(); onTab('mall'); }}><Search size={17}/><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索商品、产地"/><button>搜索</button></form>
+      <div className="mp-home-nav"><button onClick={() => onOpenPage('region')}><img src="/assets/miniprogram/farmer-icons/pin.png" alt=""/>{region?.label || region?.city || region?.province || '选择收货地区'}⌄</button><button onClick={() => onOpenPage('messages')}><img src="/assets/miniprogram/farmer-icons/chat.png" alt=""/>消息</button></div>
+      <form className="mp-home-search" onSubmit={(event) => { event.preventDefault(); if (keyword.trim()) onSearch(keyword.trim()); }}><Search size={17}/><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索商品、产地"/><button>搜索</button></form>
     </header>
     <div className="mp-home-body">
-      <button className="mp-seasonal-hero" onClick={() => onTab('mall')}><img src="/assets/miniprogram/hero-farm.jpg" alt=""/><span className="mp-hero-shade"/><span className="mp-hero-copy"><small>小满合</small><b>把新鲜带回家</b><i>发现土地里的好味道</i><em>逛逛当季农货 ›</em></span></button>
-      <section className="mp-category-grid">{categories.map((item, index) => <button key={item.label} onClick={() => index === 4 || index === 5 || index === 7 ? onTab('adopt') : onTab('mall')}><span><img src={`/assets/miniprogram/farmer-icons/${item.icon}`} alt=""/></span><b>{item.label}</b></button>)}</section>
+      {homeBanners.length > 0 ? (
+        <div className="mp-home-swiper">
+          <div className="mp-home-swiper-track" style={{ transform: `translateX(-${bannerIndex * 100}%)` }}>
+            {homeBanners.map((banner, index) => (
+              <button key={banner.id || index} className="mp-home-swiper-item" onClick={() => openBannerTarget(banner)}>
+                <img src={banner.image} alt=""/>
+                <span className="mp-hero-shade"/>
+                <span className="mp-hero-copy"><small>耘露</small><b>{banner.title}</b><em>耘露好物 轻松挑选 ›</em></span>
+              </button>
+            ))}
+          </div>
+          {homeBanners.length > 1 && <div className="mp-home-swiper-dots">{homeBanners.map((_, index) => <i key={index} className={index === bannerIndex ? 'active' : ''} />)}</div>}
+        </div>
+      ) : (
+        <button className="mp-seasonal-hero" onClick={() => onTab('mall')}><img src="/assets/miniprogram/hero-farm.jpg" alt=""/><span className="mp-hero-shade"/><span className="mp-hero-copy"><small>耘露</small><b>把新鲜带回家</b><i>发现土地里的好味道</i><em>逛逛当季农货 ›</em></span></button>
+      )}
+      <section className="mp-category-grid">{(homeCategories.length ? homeCategories : (categories || [])).slice(0, 8).map((item) => {
+        const catIcons: Record<string, string> = { '精选推荐': 'cat-medal', '特产': 'cat-mountain', '农产品': 'cat-rice', '助农产品': 'cat-help', '冷链生鲜': 'cat-snow', '养生滋补': 'cat-herb', '粮油米面': 'cat-wheat', '新鲜水果': 'cat-medal', '时令蔬菜': 'chip-sprout', '肉禽蛋品': 'chip-box', '海鲜水产': 'cat-snow', '乳品烘焙': 'chip-wallet', '粮油调味': 'cat-wheat', '休闲零食': 'chip-search', '酒水饮料': 'cat-herb', '耘露优选': 'cat-medal', '日用百货': 'chip-box', '茶饮冲调': 'cat-herb', '坚果干货': 'cat-wheat' };
+        const icon = catIcons[item.name];
+        return (
+          <button key={item.id || item.name} onClick={() => onMallCategory(item.id)}>
+            <span>
+              {item.imageUrl ? <img src={imageURL(item.imageUrl)} alt="" />
+                : icon ? <img className="kk-icon" src={`/assets/miniprogram/ui-v2/icons/${icon}.png`} alt="" />
+                : <i className="kk-letter">{item.name.slice(0, 1)}</i>}
+            </span>
+            <b>{item.name}</b>
+          </button>
+        );
+      })}</section>
+      <section className="mp-smart-section">
+        <div className="mp-smart-head">
+          <div><b>耘露智慧 · 数字农业</b><span>数字赋能乡村振兴</span></div>
+          <em>AI</em>
+        </div>
+        <div className="mp-smart-grid">{smartServices.map((item) => <button key={item.label} onClick={item.action}><span><item.icon size={20}/></span><b>{item.label}</b><small>{item.sub}</small></button>)}</div>
+      </section>
+      {regionFeed && regionFeed.groups.length > 0 && (
+        <section className="mp-region-feed">
+          <div className="mp-region-head">
+            <div className="mp-region-title-block">
+              <div className="mp-region-title-row"><b>{regionFeed.city || regionFeed.province}</b><em>{regionFeed.located ? '已定位' : '为你推荐'}</em></div>
+              <span>{regionFeed.slogan}</span>
+            </div>
+            <button onClick={() => onOpenPage('regionContent')}>切换地区 ›</button>
+          </div>
+          {regionFeed.groups.map((group) => (
+            <div className="mp-region-group" key={group.type || group.title}>
+              <div className="mp-region-group-head"><b>{group.title}</b><span>{group.subtitle}</span></div>
+              <div className="mp-region-scroll">
+                {group.items.map((item) => (
+                  <button className="mp-region-card" key={item.id} onClick={() => openRegionItem(item)}>
+                    <div className="mp-region-media">{item.imageUrl ? <img src={imageURL(item.imageUrl)} alt=""/> : <img src="/assets/miniprogram/farmer-icons/leaf.png" alt=""/>}</div>
+                    <div className="mp-region-body">
+                      <b>{item.title}</b>
+                      <span>{item.subtitle}</span>
+                      {item.tags.length > 0 && <div className="mp-region-tags">{item.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
       {error && <div className="mp-catalogue-note">商品加载失败：{error} <button onClick={() => window.location.reload()}>重试</button></div>}
       {products.length > 0 && <section className="mp-home-zones"><div className="mp-section-heading"><b>当季农货</b><button onClick={() => onTab('mall')}>查看分类 ›</button></div><div className="mp-zone-products">{products.slice(0, 3).map((item) => <button key={item.id} onClick={() => onProduct(item)}><img src={item.image} alt=""/><b>{item.name}</b><small>{item.origin || '产地信息待补充'}</small>{!catalogOnly && item.price > 0 ? <strong>¥{item.price}</strong> : <em>待上架</em>}</button>)}</div></section>}
       {catalogOnly && <p className="mp-catalogue-note">商品资料预览 · 交易服务尚未接入</p>}
-      <section className="mp-products-section"><div className="mp-section-heading"><b>发现好农货</b><span>{catalogOnly ? '图册预览' : '商品'}</span></div>{loading ? <div className="mp-loading">正在加载商品…</div> : displayed.length ? <div className="mp-goods-grid">{displayed.map((item) => <button className="mp-goods-card" key={item.id} onClick={() => onProduct(item)}><span className="mp-goods-photo"><img src={item.image} alt=""/>{catalogOnly && <i>待上架</i>}</span><b>{item.name}</b><small>{item.origin || '产地待确认'}{item.unit ? ` · ${item.unit}` : ''}</small><div>{catalogOnly || !item.price ? <em>待上架</em> : <strong>¥{item.price}</strong>}<span>›</span></div></button>)}</div> : <div className="mp-empty"><img src="/assets/miniprogram/farmer-icons/bag.png" alt=""/><b>还没有在售商品</b><span>商品上架后，会在这里展示</span></div>}</section>
+      <section className="mp-products-section"><div className="mp-section-heading"><b>发现好农货</b><span>{catalogOnly ? '图册预览' : '商品'}</span></div>{loading ? <div className="mp-loading">正在加载商品…</div> : displayed.length ? <div className="mp-goods-grid">{displayed.map((item) => <button className="mp-goods-card" key={item.id} onClick={() => onProduct(item)}><span className="mp-goods-photo"><img src={item.image} alt=""/>{catalogOnly && <i>待上架</i>}</span><b>{item.name}</b><small>{item.origin || '产地待确认'}{item.unit ? ` · ${item.unit}` : ''}</small><div>{catalogOnly || !item.price ? <em>待上架</em> : <strong>¥{item.price}</strong>}<i className="mp-quick-add" onClick={(event) => { event.stopPropagation(); onAddCart(item); }}>+</i></div></button>)}</div> : <div className="mp-empty"><img src="/assets/miniprogram/farmer-icons/bag.png" alt=""/><b>还没有在售商品</b><span>商品上架后，会在这里展示</span></div>}</section>
       <button className="mp-home-end" onClick={() => onTab('mall')}>去分类发现更多农货 ›</button>
     </div>
   </div>;
@@ -836,296 +1185,179 @@ function DataSourceBadge({ source, compact = false }: { source: ApiDataSource; c
   return <span className={`data-source-badge ${source} ${compact ? 'compact' : ''}`} title={source === 'real' ? '来自后台 4.0 移动端接口' : '当前不是后台 4.0 实时数据'}>{copy}</span>;
 }
 
-function Mall({ category, setCategory, categories, products: list, productError, source, categorySource, canPurchase = source === 'real', onProduct, onAddCart, notify }: { category: CategoryId; setCategory: (v: CategoryId) => void; categories: AppCategory[]; products: Product[]; productError: string; source: ApiDataSource; categorySource: ApiDataSource; canPurchase?: boolean; onProduct: (item: Product) => void; onAddCart: (item: Product) => Promise<void> | void; notify: (message: string) => void }) {
+function Mall({ category, setCategory, categories, products: list, productError, source, categorySource, canPurchase = source === 'real', onProduct, onAddCart, notify, onOpenCart, onBack }: { category: string; setCategory: (v: string) => void; categories: RawCategory[]; products: Product[]; productError: string; source: ApiDataSource; categorySource: ApiDataSource; canPurchase?: boolean; onProduct: (item: Product) => void; onAddCart: (item: Product) => Promise<void> | void; notify: (message: string) => void; onOpenCart: () => void; onBack: () => void }) {
   const [keyword, setKeyword] = useState('');
-  const [sort, setSort] = useState<'default' | 'sales' | 'price'>('default');
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [priceBand, setPriceBand] = useState<'all' | 'low' | 'mid' | 'high'>('all');
-  const [onlyTrace, setOnlyTrace] = useState(false);
-  const categoryTone: Record<string, { title: string; sub: string; image: string; color: string }> = {
-    all: { title: '发现当季农货', sub: '商品资料与上架状态以服务端为准', image: '/assets/products/market/produce-table.jpg', color: '#5e8f3d' },
-    veg: { title: '时令蔬菜', sub: '浏览商品资料', image: '/assets/catalog/shouguang-greenhouse.jpg', color: '#4f9b45' },
-    fruit: { title: '果园直发甜鲜', sub: '当季水果 精选大果', image: '/assets/products/market/strawberry-basket.jpg', color: '#75933e' },
-    grain: { title: '好米好油主粮', sub: '新米粮油 产区严选', image: '/assets/farm/rice-field.jpg', color: '#a88736' },
-    meat: { title: '肉蛋鲜配专区', sub: '散养鲜蛋 冷链到家', image: '/assets/products/market/farm-eggs.jpg', color: '#8f7446' },
-    local: { title: '地方特产优选', sub: '山珍茶礼 原产地发货', image: '/assets/products/market/green-tea-loose.jpg', color: '#668a4a' },
-    seafood: { title: '水产海鲜鲜配', sub: '江河湖海 鲜活到家', image: '/assets/products/market/tomato.jpg', color: '#4a7a8a' },
-  };
-  const activeTone = categoryTone[category] || categoryTone.all;
-  const saleScore = (sales: string) => {
-    const value = Number.parseFloat(sales);
-    return sales.includes('万') ? value * 10000 : value;
-  };
+  const [sort, setSort] = useState<'default' | 'priceAsc' | 'priceDesc'>('default');
+  const keywordTrim = keyword.trim();
+  const activeCategoryName = category === '' ? '全部商品' : (categories.find((c) => String(c.id) === category)?.name || '全部商品');
   const visibleList = useMemo(() => {
-    let result = list.filter((item) => `${item.name}${item.origin}${item.tag}`.includes(keyword.trim()));
-    if (canPurchase && priceBand === 'low') result = result.filter((item) => item.price < 30);
-    if (canPurchase && priceBand === 'mid') result = result.filter((item) => item.price >= 30 && item.price < 70);
-    if (canPurchase && priceBand === 'high') result = result.filter((item) => item.price >= 70);
-    if (canPurchase && onlyTrace) result = result.filter((item) => item.tag || item.origin);
-    if (canPurchase && sort === 'sales') result = [...result].sort((a, b) => saleScore(b.sales) - saleScore(a.sales));
-    if (canPurchase && sort === 'price') result = [...result].sort((a, b) => a.price - b.price);
+    let result = list.filter((item) =>
+      !keywordTrim || `${item.name}${item.origin}${item.tag}`.toLowerCase().includes(keywordTrim.toLowerCase()),
+    );
+    if (sort === 'priceAsc') result = [...result].sort((a, b) => a.price - b.price);
+    else if (sort === 'priceDesc') result = [...result].sort((a, b) => b.price - a.price);
     return result;
-  }, [canPurchase, keyword, list, onlyTrace, priceBand, sort]);
-  const clearFilter = () => {
-    setKeyword('');
-    setSort('default');
-    setPriceBand('all');
-    setOnlyTrace(false);
-  };
+  }, [keywordTrim, list, sort]);
+
+  const togglePriceSort = () =>
+    setSort((current) => (current === 'priceAsc' ? 'priceDesc' : current === 'priceDesc' ? 'default' : 'priceAsc'));
 
   return (
     <div className="mall-market-page">
-      <section className="market-search-head">
-        <div className="market-search-box">
-          <Search size={17} />
-          <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索番茄、鸡蛋、五常大米" />
+      <section className="mall-top">
+        <div className="mall-search-row">
+          <button className="mall-back" onClick={onBack} aria-label="返回"><ChevronLeft size={18} /></button>
+          <div className="mall-search">
+            <Search size={15} />
+            <input
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="搜索商品、产地"
+              aria-label="搜索商品或产地"
+            />
+            {keyword ? (
+              <button className="mall-search-clear" onClick={() => setKeyword('')} aria-label="清空搜索">×</button>
+            ) : null}
+            <button className="mall-search-submit" onClick={() => notify('已为你筛选')}>搜索</button>
+          </div>
         </div>
-        <button className="market-filter-btn" onClick={() => setFilterOpen(true)}>筛选</button>
-      </section>
-
-      <section className="market-category-strip">
-        {categories.map((item) => (
-          <button key={item.id} className={category === item.id ? 'active' : ''} onClick={() => setCategory(item.id)}>
-            <span style={{ backgroundImage: `url(${categoryTone[item.id]?.image || categoryTone.all.image})` }} />
-            <b>{item.name}</b>
-          </button>
-        ))}
-      </section>
-
-      <section className="market-promo-band" style={{ backgroundImage: `linear-gradient(90deg, ${activeTone.color}, rgba(17, 38, 32, 0.82)), url(${activeTone.image})` }}>
-        <div>
-          <span>基地严选</span>
-          <b>{activeTone.title}</b>
-          <p>{activeTone.sub}</p>
+        <div className="mall-departments">
+          <div className="department-scroll">
+            <div className="department-row">
+              {categories.map((item) => (
+                <button
+                  key={item.id}
+                  className={`department ${category === String(item.id) ? 'selected' : ''}`}
+                  onClick={() => setCategory(String(item.id))}
+                >
+                  <span className="department-photo">
+                    {item.imageUrl
+                      ? <img src={imageURL(item.imageUrl)} alt="" />
+                      : <span className="dept-fallback">{item.name.slice(0, 1)}</span>}
+                  </span>
+                  <span>{item.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="department-all" onClick={() => setCategory('')}><span>全部</span><span>⌄</span></button>
         </div>
-        <button onClick={() => notify(canPurchase ? '分类已更新' : '商品资料预览，交易服务尚未接入')}>{canPurchase ? '查看商品' : '商品图册'}</button>
       </section>
 
-      <div className="market-body">
-        <aside className="market-side-rail">
+      <section className="mall-body">
+        <aside className="mall-categories">
+          <button className={`mall-category ${category === '' ? 'active' : ''}`} onClick={() => setCategory('')}>全部商品</button>
           {categories.map((item) => (
-            <button key={item.id} className={category === item.id ? 'active' : ''} onClick={() => setCategory(item.id)}>
+            <button
+              key={item.id}
+              className={`mall-category ${category === String(item.id) ? 'active' : ''}`}
+              onClick={() => setCategory(String(item.id))}
+            >
               {item.name}
             </button>
           ))}
         </aside>
 
-        <section className="market-shelf">
-          <div className="market-sort-row">
+        <section className="mall-shelf">
+          <div className="mall-subcategory"><b>{activeCategoryName}</b></div>
+          <div className="mall-sort-bar">
             <button className={sort === 'default' ? 'active' : ''} onClick={() => setSort('default')}>综合</button>
-            <button className={sort === 'sales' ? 'active' : ''} disabled={!canPurchase} onClick={() => setSort('sales')}>销量</button>
-            <button className={sort === 'price' ? 'active' : ''} disabled={!canPurchase} onClick={() => setSort('price')}>价格</button>
-            <button className={filterOpen ? 'active' : ''} onClick={() => setFilterOpen(true)}>更多</button>
+            <button className={sort !== 'default' ? 'active' : ''} onClick={togglePriceSort}>
+              价格 <span>{sort === 'priceAsc' ? '↑' : sort === 'priceDesc' ? '↓' : '↕'}</span>
+            </button>
           </div>
-          <div className="mall-filter-tags">
-            {keyword && <span>搜索：{keyword}</span>}
-            {priceBand !== 'all' && <span>{priceBand === 'low' ? '30元以下' : priceBand === 'mid' ? '30-70元' : '70元以上'}</span>}
-            {onlyTrace && <span>官方溯源</span>}
-            {(keyword || priceBand !== 'all' || onlyTrace || sort !== 'default') && <button onClick={clearFilter}>清除</button>}
-          </div>
-          <div className="market-shelf-head">
-            <div>
-              <b>{activeTone.title}</b>
-              <span>共 {visibleList.length} 种农产品</span>
-            </div>
-            <div className="market-data-status"><DataSourceBadge source={source} compact /><small>{canPurchase ? '上架商品' : '仅图册预览'}</small></div>
-          </div>
-          {categorySource !== 'real' && <p className="data-source-hint">分类为{categorySource === 'fallback' ? '兼容' : '本地'}展示，后台分类恢复后将自动同步。</p>}
+          {categorySource !== 'real' && <p className="mall-data-hint">分类为本地兼容展示，后台分类恢复后将自动同步。</p>}
           {productError ? (
-            <section className="market-empty">
-              <PackageSearch size={34} />
-              <b>商品接口异常</b>
-              <span>{productError}</span>
-              <button onClick={clearFilter}>清除筛选</button>
-            </section>
+            <div className="mall-state">
+              <span className="mall-state-title">商品接口异常</span>
+              <span className="mall-state-description">{productError}</span>
+              <button className="mall-state-button" onClick={() => { setKeyword(''); setCategory(''); }}>重新加载</button>
+            </div>
           ) : visibleList.length ? (
-            <div className="market-product-list">
+            <div className="mall-product-scroll">
               {visibleList.map((item) => (
-                <article key={item.id} className="market-product-row" onClick={() => onProduct(item)}>
-                  <div className="market-product-img">
-                    <ProductImage item={item} />
-                    <span>{item.tag}</span>
-                  </div>
-                  <div className="market-product-info">
-                    <b>{item.name} {item.unit}</b>
-                    <p>{item.origin} · {item.tag}</p>
-                    <div className="market-tags">{canPurchase ? <span>可购买</span> : <span>待上架 · 商品资料预览</span>}</div>
-                    <div className="market-price-line">
-                      <div>
-                        {canPurchase && item.price > 0 ? <strong>¥{item.price}</strong> : <strong>待上架</strong>}
-                      </div>
-                      {canPurchase && <button onClick={(event) => { event.stopPropagation(); void onAddCart(item); }} aria-label={`加入购物车：${item.name}`}>+</button>}
+                <article key={item.id} className="mall-product" onClick={() => onProduct(item)}>
+                  <div className="mall-product-photo"><ProductImage item={item} /></div>
+                  <div className="mall-product-info">
+                    <b className="mall-product-name">{item.name}</b>
+                    {item.origin ? <span className="mall-product-origin">{item.origin}</span> : null}
+                    {item.unit ? <span className="mall-product-unit">{item.unit}</span> : null}
+                    <div className="mall-product-bottom">
+                      {canPurchase && item.price > 0
+                        ? <span className="mall-product-price"><span>¥</span>{item.price}</span>
+                        : <span className="mall-product-pending">{canPurchase ? '待上架' : '商品资料预览'}</span>}
+                      {canPurchase && item.price > 0 && (
+                        <button
+                          className="mall-product-open"
+                          onClick={(event) => { event.stopPropagation(); void onAddCart(item); }}
+                          aria-label={`加入购物车：${item.name}`}
+                        >+</button>
+                      )}
                     </div>
+                    {!canPurchase && <span className="mall-product-stock">价格库存尚未接入</span>}
                   </div>
                 </article>
               ))}
+              <div className="mall-list-footer">已经到底了</div>
             </div>
           ) : (
-            <section className="market-empty">
-              <PackageSearch size={34} />
-              <b>没找到合适商品</b>
-              <span>换个关键词或清除筛选试试</span>
-              <button onClick={clearFilter}>清除筛选</button>
-            </section>
+            <div className="mall-state">
+              <span className="mall-state-title">{keywordTrim ? '没有找到相关商品' : '这个分类还没有商品'}</span>
+              <span className="mall-state-description">换个关键词，或看看其他分类</span>
+              <button className="mall-state-button" onClick={() => { setKeyword(''); setCategory(''); }}>查看全部</button>
+            </div>
           )}
         </section>
-      </div>
-      {filterOpen && (
-        <div className="mall-filter-overlay" onClick={() => setFilterOpen(false)}>
-          <section className="mall-filter-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="trace-section-head"><b>筛选商品</b><button onClick={() => setFilterOpen(false)}>完成</button></div>
-            <h3>价格区间</h3>
-            <div className="filter-chip-grid">
-              {[
-                ['all', '不限'],
-                ['low', '30元以下'],
-                ['mid', '30-70元'],
-                ['high', '70元以上']
-              ].map(([id, label]) => <button key={id} className={priceBand === id ? 'active' : ''} onClick={() => setPriceBand(id as typeof priceBand)}>{label}</button>)}
-            </div>
-            <h3>品质服务</h3>
-            <button className={`filter-check-row ${onlyTrace ? 'active' : ''}`} onClick={() => setOnlyTrace((value) => !value)}>
-              <span>只看支持官方溯源</span>
-              <CheckCircle2 size={18} />
-            </button>
-            <div className="filter-sheet-actions"><button onClick={clearFilter}>重置</button><button className="primary" onClick={() => setFilterOpen(false)}>查看结果</button></div>
-          </section>
-        </div>
-      )}
+      </section>
+
+      <section className="mall-checkout-bar">
+        <button className="mall-checkout-icon" onClick={onOpenCart} aria-label="打开购物车"><ShoppingCart size={22} /></button>
+        <div className="mall-checkout-copy"><span>购物车</span><span>按农户分别结算</span></div>
+        <button onClick={onOpenCart}>查看购物车</button>
+      </section>
     </div>
   );
 }
 
 function Trace({ onResult, notify, traceTimeline, safeProduct, onTraceResult }: { onResult: () => void; notify: (message: string) => void; traceTimeline: TraceStep[]; safeProduct: (idx: number) => Product; onTraceResult: (result: { events: TraceStep[] }) => void }) {
-  return <div className="mp-trace-unavailable"><img src="/assets/miniprogram/farmer-icons/shield.png" alt=""/><h2>产品溯源</h2><p>溯源服务尚未开放。当前商品资料和页面样板不代表真实批次、检测或交易记录。</p><span>服务开通后，可在商品详情查看对应批次信息。</span></div>;
+  const [traceTab, setTraceTab] = useState<'lifecycle' | 'scan'>('lifecycle');
   const [traceCode, setTraceCode] = useState('XMHT-0003-0609');
   const [querying, setQuerying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [querySource, setQuerySource] = useState<ApiDataSource>('unavailable');
   const [queryError, setQueryError] = useState('请输入批次号后查询后台 4.0 溯源记录');
   const [queriedEvents, setQueriedEvents] = useState<TraceStep[]>([]);
-  const [activeReport, setActiveReport] = useState<string | null>(null);
+  const [scanRecord, setScanRecord] = useState<Record<string, unknown> | null>(null);
   const traceProducts = [safeProduct(2), safeProduct(0), safeProduct(1), safeProduct(3), safeProduct(4)].filter(Boolean);
   const [selectedTraceId, setSelectedTraceId] = useState(traceProducts[0].id);
   const traceProduct = traceProducts.find((item) => item.id === selectedTraceId) || traceProducts[0];
-  const traceCodeForProduct = `XMHT-${String(traceProduct.id).padStart(4, '0')}-0609`;
-  const traceProductProfiles: Record<string, { subtitle: string; method: string; harvestDate: string; base: string; heroImage: string; flowImages: string[] }> = {
-    veg: {
-      subtitle: '基地鲜采 · 当日分拣 · 安心到家',
-      method: '绿色种植',
-      harvestDate: '2026.06.09',
-      base: `${traceProduct.origin}小满合蔬菜基地`,
-      heroImage: traceProduct.image,
-      flowImages: ['/assets/farm/tomato-harvest.jpg', traceProduct.image, '/assets/products/market/vegetable-mix.jpg', '/assets/products/market/produce-table.jpg']
-    },
-    fruit: {
-      subtitle: '自然成熟 · 分级精选 · 鲜甜多汁',
-      method: '生态果园',
-      harvestDate: '2026.06.09',
-      base: `${traceProduct.origin}小满合果园基地`,
-      heroImage: traceProduct.image,
-      flowImages: ['/assets/products/market/apple-red.jpg', '/assets/products/market/apple-green.jpg', '/assets/products/market/apple-box.jpg', '/assets/products/market/produce-table.jpg']
-    },
-    grain: {
-      subtitle: '源头直供 · 新米现碾 · 批次可查',
-      method: '标准化种植',
-      harvestDate: '2026.06.02',
-      base: `${traceProduct.origin}小满合粮食基地`,
-      heroImage: traceProduct.image,
-      flowImages: ['/assets/farm/rice-field.jpg', traceProduct.image, '/assets/products/market/rice-scoop.jpg', '/assets/products/market/rice-white.jpg']
-    },
-    meat: {
-      subtitle: '谷物散养 · 新鲜分拣 · 冷链到家',
-      method: '谷物散养',
-      harvestDate: '2026.06.09',
-      base: `${traceProduct.origin}小满合养殖基地`,
-      heroImage: traceProduct.image,
-      flowImages: [traceProduct.image, '/assets/products/market/eggs.jpg', '/assets/products/market/farm-eggs.jpg', '/assets/products/market/produce-table.jpg']
-    },
-    local: {
-      subtitle: '产区精选 · 匠心加工 · 品质可验',
-      method: '产区精选',
-      harvestDate: '2026.06.06',
-      base: `${traceProduct.origin}小满合优选基地`,
-      heroImage: traceProduct.image,
-      flowImages: [traceProduct.image, '/assets/products/market/green-tea-loose.jpg', '/assets/products/market/puer-tea-cake.jpg', '/assets/products/market/produce-table.jpg']
+  const recordText = (...keys: string[]): string => {
+    if (!scanRecord) return '—';
+    for (const key of keys) {
+      const value = scanRecord[key];
+      if (value !== null && value !== undefined && String(value).trim() !== '') return String(value);
     }
+    return '—';
   };
-  const traceProfile = traceProductProfiles[traceProduct.category] || traceProductProfiles.veg;
-  const traceEvidence = [
-    { title: '产地实拍', desc: `${traceProduct.origin}示范基地清晨采收`, image: '/assets/farm/greenhouse.jpg', action: '基地采收记录' },
-    { title: '快检报告', desc: '农残、重金属检测均合格', image: traceProduct.image, action: '农残快检报告' },
-    { title: '冷链温控', desc: '运输全程稳定 2-6°C', image: '/assets/banners/banner1.jpg', action: '冷链温控曲线' }
-  ];
-  const traceMetrics = [
-    ['农残检测', '合格', '0.00mg/kg'],
-    ['冷链温度', '4.2°C', '全程达标'],
-    ['区块链存证', '7节点', '不可篡改'],
-    ['质检评分', '98.6', '优选批次']
-  ];
-  const traceReports = ['农残快检报告', '基地采收记录', '冷链温控曲线'];
-  const traceTimelineForProduct = (queriedEvents.length ? queriedEvents : traceTimeline).map((item, index) => index === 0
-    ? { ...item, desc: `${traceProduct.origin}示范基地完成清晨采摘，进入初检环节。` }
-    : item
-  );
-  const reportDetails: Record<string, { title: string; subtitle: string; conclusion: string; rows: Array<[string, string]>; chips: string[]; visual: 'test' | 'harvest' | 'cold' }> = {
-    '农残快检报告': {
-      title: '农残快检报告',
-      subtitle: '小满合质检中心 · 报告编号 LY-QC-0609',
-      conclusion: '未检出高风险农残，符合平台优选标准。',
-      rows: [
-        ['检测时间', '2026-06-09 10:35'],
-        ['检测项目', '有机磷 / 菊酯类 / 多菌灵'],
-        ['检测结果', '合格'],
-        ['质检员', '王师傅']
-      ],
-      chips: ['农残合格', '批次未召回', '支持复核'],
-      visual: 'test'
-    },
-    '基地采收记录': {
-      title: '基地采收记录',
-      subtitle: '山东烟台示范基地 · 批次 LYYN-20260609',
-      conclusion: '本批次为清晨采收，采后 2 小时内完成分级装箱。',
-      rows: [
-        ['采收时间', '2026-06-09 08:10'],
-        ['采收基地', '山东烟台优选果园'],
-        ['成熟度', '自然成熟'],
-        ['装箱方式', '产地分级装箱']
-      ],
-      chips: ['产地真实', '清晨采收', '源头直发'],
-      visual: 'harvest'
-    },
-    '冷链温控曲线': {
-      title: '冷链温控曲线',
-      subtitle: '运输温控记录 · 全程 2-6°C',
-      conclusion: '运输温度稳定，无长时间异常升温记录。',
-      rows: [
-        ['出库温度', '4.2°C'],
-        ['运输均温', '4.8°C'],
-        ['异常记录', '0 次'],
-        ['预计送达', '48 小时内']
-      ],
-      chips: ['温控正常', '冷链记录完整', '即将派送'],
-      visual: 'cold'
-    }
-  };
-
   const submitTrace = async () => {
     if (!traceCode.trim()) {
-      notify('请输入溯源码或扫描商品二维码');
+      notify('请输入批次号或扫描商品二维码');
       return;
     }
     setVerified(false);
     setQuerying(true);
+    setScanRecord(null);
+    setQueriedEvents([]);
     setQueryError('正在核验产地、检测与冷链记录');
     try {
       const result = await queryTrace(traceCode.trim());
       setQuerySource(result.source);
       setQueriedEvents(result.events);
+      setScanRecord(result.record);
       onTraceResult(result);
       if (result.source !== 'real' || !result.record) {
         setQueryError(result.fallbackReason || '未找到该批次的后台验真记录');
-        notify(result.fallbackReason || '未找到可验证的批次记录');
+        notify(result.fallbackReason || '溯源验真服务暂不可用');
         return;
       }
       setVerified(true);
@@ -1133,6 +1365,8 @@ function Trace({ onResult, notify, traceTimeline, safeProduct, onTraceResult }: 
       notify('验真通过，已加载本批次真实记录');
     } catch (error) {
       setQuerySource('unavailable');
+      setScanRecord(null);
+      setQueriedEvents([]);
       setQueryError(error instanceof Error ? error.message : '溯源查询失败，请稍后重试');
       notify('溯源查询失败，请稍后重试');
     } finally {
@@ -1140,646 +1374,260 @@ function Trace({ onResult, notify, traceTimeline, safeProduct, onTraceResult }: 
     }
   };
 
-  const referenceTraceFlow = [
-    { title: '基地采收', desc: '人工采摘 · 自然成熟', time: '2026.06.09 06:30', image: traceProfile.flowImages[0], tag: '农残合格', sub: '检测合格' },
-    { title: '品质检测', desc: '多项检测 · 严控品质', time: '2026.06.09 09:15', image: traceProfile.flowImages[1], tag: '农残合格', sub: '检测报告' },
-    { title: '冷链配送', desc: '全程冷链 · 新鲜直达', time: '2026.06.09 14:40', image: traceProfile.flowImages[2], tag: '冷链达标', sub: '温度记录' },
-    { title: '到达门店/用户', desc: '新鲜送达 · 请尽快享用', time: '2026.06.09 18:10', image: traceProfile.flowImages[3], tag: '区块链存证', sub: '查看凭证' }
-  ];
-  const activeReportDetail = activeReport ? reportDetails[activeReport as string] : null;
-
   return (
     <div className="trace-clone-page">
-      <section className="trace-product-picker">
-        <div><b>选择溯源商品</b><span>切换商品查看对应批次信息</span></div>
-        <div className="trace-product-scroll">
-          {traceProducts.map((item) => (
-            <button key={item.id} className={item.id === selectedTraceId ? 'active' : ''} onClick={() => { setSelectedTraceId(item.id); setTraceCode(`XMHT-${String(item.id).padStart(4, '0')}-0609`); notify(`已切换到${item.name}`); }}>
-              <img src={item.image} alt="" />
-              <span>{item.name}</span>
-              <small>{item.origin}</small>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="trace-clone-hero">
-        <div className="trace-clone-copy">
-          <span><ShieldCheck size={14} />{verified ? '已完成官方验真' : '待验证批次'}</span>
-          <h2>{traceProduct.name}</h2>
-          <p>{traceProfile.subtitle}</p>
-          <div className="trace-clone-meta">
-            <p><MapPin size={16} />产地 <b>{traceProduct.origin}</b></p>
-            <p><Leaf size={16} />种植方式 <b>{traceProfile.method}</b></p>
-            <p><Clock3 size={16} />采收日期 <b>{traceProfile.harvestDate}</b></p>
-          </div>
-          <button onClick={() => { void submitTrace(); }} disabled={querying}><ScanLine size={17} />{querying ? '查询中…' : '一键溯源'}</button>
-        </div>
-        <img src={traceProfile.heroImage} alt="" />
-      </section>
-
-      <section className="trace-clone-origin">
-        <div>
-          <b>产地信息</b>
-          <p><MapPin size={14} />{traceProfile.base}</p>
-          <small>溯源码 {traceCode || traceCodeForProduct} · {queryError}</small>
-        </div>
-        <div className="trace-clone-map"><DataSourceBadge source={querySource} compact /><MapPin size={24} /></div>
-      </section>
-
-      <section className="trace-clone-flow">
-        <div className="trace-clone-title"><b>溯源流程</b><span>{verified ? '本批次真实记录' : '查询后展示'}</span></div>
-        {!traceTimelineForProduct.length && <p className="data-source-hint">尚未查询到该批次记录，不能据此判断商品已验真。</p>}
-        {traceTimelineForProduct.map((item, index) => (
-          <article key={`${item.stage}-${index}`}>
-            <i />
-            <img src={referenceTraceFlow[index % referenceTraceFlow.length].image} alt="" />
-            <div>
-              <b>{item.stage}</b>
-              <p>{item.desc}</p>
-              <small>{item.time || '时间待补充'}</small>
-            </div>
-            <button onClick={() => notify(verified ? '该记录详情待后台补充' : '请先完成批次验真')}><span>{verified ? '已核验' : '待验真'}</span><em>查看</em></button>
-          </article>
-        ))}
-      </section>
-
-      <section className="trace-clone-chain">
-        <ShieldCheck size={25} />
-        <div>
-          <b>区块链存证 · 全程可信</b>
-          <p>本商品溯源信息已上链存证，真实可靠不可篡改</p>
-        </div>
-        <ChevronRight size={18} />
-      </section>
-    </div>
-  );
-
-  return (
-    <div className={`trace-page-red trace-pro-page trace-top-page trace-assurance-page ${querying ? 'trace-querying' : ''}`}>
-      <section className="trace-assurance-hero">
-        <div className="trace-assurance-copy">
-          <span>TRUST CENTER</span>
-          <h2>这批货，可以放心买</h2>
-          <p>产地、采收、检测、温控全链路已核验，证据直接给消费者看。</p>
-          <div className="trace-assurance-tags">
-            <i>官方验真</i>
-            <i>农残合格</i>
-            <i>坏果包赔</i>
-          </div>
-        </div>
-        <article className="trace-assurance-product">
-          <img src={traceProduct.image} alt="" />
-          <i>已验真商品</i>
-          <b>{traceProduct.name}</b>
-          <span>{traceProduct.origin} · {traceProduct.tag}</span>
-          <small>溯源码 {traceCode}</small>
-        </article>
-      </section>
-
-      <section className="trace-search-panel trace-assurance-search">
-        <div className="trace-input-box">
-          <Search size={16} />
-          <input value={traceCode} onChange={(event) => setTraceCode(event.target.value)} placeholder="输入溯源码 / 批次号" />
-        </div>
-        <button onClick={submitTrace}>{querying ? '查询中' : verified ? '重新查询' : '立即查询'}</button>
-      </section>
-
-      <section className={`trace-verdict-card ${verified ? 'verified' : ''}`}>
-        <div>
-          <CheckCircle2 size={26} />
-          <span>{verified ? '验真通过' : '正在核验'}</span>
-          <b>{verified ? '可放心购买' : '正在核对批次记录'}</b>
-          <small>{verified ? `${traceProduct.name} 已完成官方验真，未发现异常记录。` : '正在核对产地、检测与冷链记录。'}</small>
-        </div>
-        <button onClick={onResult}>查看完整报告</button>
-      </section>
-
-      <section className="trace-proof-board">
-        {traceEvidence.map((item) => (
-          <button key={item.title} onClick={() => setActiveReport(item.action)}>
-            <img src={item.image} alt="" />
-            <span>{item.title}</span>
-            <b>{item.desc}</b>
-            <small>查看证据</small>
-          </button>
-        ))}
-      </section>
-
-      <section className="trace-verify-steps">
-        {['产地档案', '农残检测', '冷链温控', '区块链存证'].map((item, index) => (
-          <span key={item} className={`${verified ? 'passed' : ''} ${querying && index === 1 ? 'checking' : ''}`}><CheckCircle2 size={14} />{item}</span>
-        ))}
-      </section>
-
-      <div className="trace-action-grid trace-action-premium">
-        <button onClick={onResult}><ScanLine size={18} /><span>扫码验真</span></button>
-        <button onClick={onResult}><PackageSearch size={18} /><span>批次查询</span></button>
-        <button onClick={() => setActiveReport('农残快检报告')}><CheckCircle2 size={18} /><span>检测报告</span></button>
+      <div className="trace-clone-tabs">
+        <button className={traceTab === 'lifecycle' ? 'active' : ''} onClick={() => setTraceTab('lifecycle')}>生命周期追溯</button>
+        <button className={traceTab === 'scan' ? 'active' : ''} onClick={() => setTraceTab('scan')}>扫码溯源</button>
       </div>
 
-      <section className="trace-consumer-summary trace-assurance-summary">
-        <div>
-          <b>消费者最关心的 4 件事</b>
-          <span>不用看复杂参数，先看结论。</span>
-        </div>
-        {[
-          ['安全', '农残合格'],
-          ['产地', traceProduct.origin],
-          ['新鲜', '采后直发'],
-          ['售后', '坏果包赔']
-        ].map(([label, value]) => (
-          <p key={label}><span>{label}</span><b>{value}</b></p>
-        ))}
-      </section>
-
-      <section className="trace-card-red trace-panel-pro">
-        <div className="trace-section-head"><b>核心检测</b><span>小满合质检中心 · 今日 10:35</span></div>
-        <div className="trace-metric-grid trace-metric-premium">
-          {traceMetrics.map(([label, value, desc]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <b>{value}</b>
-              <small>{desc}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="trace-card-red trace-panel-pro">
-        <div className="trace-section-head"><b>产地实时环境</b><span>基地传感器</span></div>
-        <div className="trace-env-red trace-env-pro">
-          {['温度 24°C', '湿度 68%', '光照 良好', '土壤 pH 6.8'].map((item) => <div key={item}>{item}</div>)}
-        </div>
-      </section>
-
-      <section className="trace-card-red trace-panel-pro">
-        <div className="trace-section-head"><b>全链路记录</b><span>已完成 3/4 节点</span></div>
-        {traceTimelineForProduct.map((item) => <TimelineItem key={item.stage} {...item} />)}
-      </section>
-
-      <section className="trace-report-list">
-        {traceReports.map((item) => (
-          <button key={item} onClick={() => setActiveReport(item)}>
-            <CheckCircle2 size={18} />
-            <span>{item}</span>
-            <ChevronRight size={16} />
-          </button>
-        ))}
-      </section>
-      {activeReportDetail && (
-        <div className="trace-report-overlay" onClick={() => setActiveReport(null)}>
-          <section className="trace-report-sheet" onClick={(event) => event.stopPropagation()}>
-            <button className="sheet-close" onClick={() => setActiveReport(null)}>关闭</button>
-            <CheckCircle2 className="sheet-badge" size={34} />
-            <span>官方报告</span>
-            <h3>{activeReportDetail!.title}</h3>
-            <p>{activeReportDetail!.subtitle}</p>
-            <div className="sheet-conclusion">{activeReportDetail!.conclusion}</div>
-            <div className="sheet-row-list">
-              {(activeReportDetail!.rows as Array<[string, string]>).map(([label, value]) => <p key={label}><span>{label}</span><b>{value}</b></p>)}
-            </div>
-            {activeReportDetail!.visual === 'harvest' && (
-              <div className="harvest-flow-card">
-                {[
-                  ['08:10', '清晨采摘'],
-                  ['09:20', '人工分级'],
-                  ['10:05', '产地装箱']
-                ].map(([time, label]) => <p key={label}><b>{time}</b><span>{label}</span></p>)}
-              </div>
-            )}
-            {activeReportDetail!.visual === 'cold' && (
-              <div className="cold-chain-card">
-                <div className="cold-chart">
-                  {[42, 52, 46, 58, 49, 54, 47].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}
-                </div>
-                <div className="cold-chart-meta"><span>2°C</span><b>全程稳定 2-6°C</b><span>6°C</span></div>
-              </div>
-            )}
-            <div className="sheet-chip-row">
-            {(activeReportDetail!.chips as string[]).map((chip: string) => <i key={chip}>{chip}</i>)}
+      {traceTab === 'lifecycle' ? (
+        <>
+          <section className="trace-product-picker">
+            <div><b>选择溯源商品</b><span>切换商品查看对应批次信息</span></div>
+            <div className="trace-product-scroll">
+              {traceProducts.map((item) => (
+                <button key={item.id} className={item.id === selectedTraceId ? 'active' : ''} onClick={() => { setSelectedTraceId(item.id); notify(`已切换到${item.name}`); }}>
+                  <img src={item.image} alt="" />
+                  <span>{item.name}</span>
+                  <small>{item.origin}</small>
+                </button>
+              ))}
             </div>
           </section>
-        </div>
+
+          <section className="trace-clone-hero">
+            <div className="trace-clone-copy">
+              <span><ShieldCheck size={14} />{traceTimeline.length ? '已接入溯源记录' : '溯源待接入'}</span>
+              <h2>{traceProduct.name}</h2>
+              <p>产地、检测与批次记录以后台 4.0 溯源接口为准。</p>
+              <div className="trace-clone-meta">
+                <p><MapPin size={16} />产地 <b>{traceProduct.origin}</b></p>
+                <p><Leaf size={16} />品类 <b>{traceProduct.category_name}</b></p>
+                <p><PackageSearch size={16} />溯源记录 <b>{traceTimeline.length ? `${traceTimeline.length} 条` : '暂未接入'}</b></p>
+              </div>
+              <button onClick={() => setTraceTab('scan')}><ScanLine size={17} />扫码溯源</button>
+            </div>
+            <img src={traceProduct.image} alt="" />
+          </section>
+
+          <section className="trace-clone-origin">
+            <div>
+              <b>产地信息</b>
+              <p><MapPin size={14} />{traceProduct.origin}</p>
+              <small>生命周期追溯 · 以后台溯源记录为准</small>
+            </div>
+            <div className="trace-clone-map"><DataSourceBadge source={traceTimeline.length ? 'real' : 'unavailable'} compact /><MapPin size={24} /></div>
+          </section>
+
+          <section className="trace-clone-flow">
+            <div className="trace-clone-title"><b>溯源流程</b><span>{traceTimeline.length ? '本批次真实记录' : '暂未接入'}</span></div>
+            {!traceTimeline.length && <p className="data-source-hint">该产品溯源记录暂未接入，请切换到「扫码溯源」查询真实批次。</p>}
+            {traceTimeline.map((item, index) => (
+              <article key={`${item.stage}-${index}`} className="plain">
+                <i />
+                <div>
+                  <b>{item.stage}</b>
+                  <p>{item.desc}</p>
+                  <small>{item.time || '时间待补充'}</small>
+                </div>
+                <button onClick={() => notify('该记录详情待后台补充')}><span>已记录</span><em>查看</em></button>
+              </article>
+            ))}
+          </section>
+
+          <section className="trace-clone-chain">
+            <ShieldCheck size={25} />
+            <div>
+              <b>区块链存证 · 全程可信</b>
+              <p>本商品溯源信息已上链存证，真实可靠不可篡改</p>
+            </div>
+            <ChevronRight size={18} />
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="trace-scan-search">
+            <div className="trace-input-box">
+              <Search size={16} />
+              <input value={traceCode} onChange={(event) => setTraceCode(event.target.value)} placeholder="输入批次号，如 XMHT-0003-0609" />
+            </div>
+            <div className="trace-scan-actions">
+              <button onClick={() => { void submitTrace(); }} disabled={querying}>{querying ? '查询中…' : '查询溯源'}</button>
+              <button className="scan" onClick={() => notify('扫码功能建设中，请手动输入批次号')}><ScanLine size={17} />扫码</button>
+            </div>
+          </section>
+
+          {scanRecord && (
+            <section className="trace-scan-result">
+              <div className="trace-clone-title"><b>溯源结果</b><span>{verified ? '已通过验真' : '待验证'}</span></div>
+              <div className="trace-scan-status"><DataSourceBadge source={querySource} compact /><small>{verified ? '该批次已通过后台 4.0 官方验真' : '正在核验批次记录'}</small></div>
+              <div className="trace-scan-meta">
+                <p><span>产品</span><b>{recordText('product')}</b></p>
+                <p><span>农户</span><b>{recordText('farmer')}</b></p>
+                <p><span>批次</span><b>{recordText('code', 'batchNo')}</b></p>
+                <p><span>采收时间</span><b>{recordText('harvestTime')}</b></p>
+              </div>
+            </section>
+          )}
+
+          <section className="trace-clone-flow">
+            <div className="trace-clone-title"><b>溯源时间线</b><span>{verified ? '本批次真实记录' : '查询后展示'}</span></div>
+            {!queriedEvents.length && <p className="data-source-hint">{queryError}</p>}
+            {queriedEvents.map((item, index) => (
+              <article key={`${item.stage}-${index}`} className="plain">
+                <i />
+                <div>
+                  <b>{item.stage}</b>
+                  <p>{item.desc}</p>
+                  <small>{item.time || '时间待补充'}</small>
+                </div>
+                <button onClick={() => notify('该记录详情待后台补充')}><span>{verified ? '已核验' : '已记录'}</span><em>查看</em></button>
+              </article>
+            ))}
+          </section>
+        </>
       )}
     </div>
   );
+
 }
 
 function AdoptV2({ onDetail, notify, projects, source }: { onDetail: () => void; notify: (message: string) => void; projects: AdoptItem[]; source: ApiDataSource }) {
   const [view, setView] = useState<'available' | 'mine'>('available');
   const [saved, setSaved] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('xm-adopt-saved') || '[]') as string[]; } catch { return []; } });
+  const [orders, setOrders] = useState<AdoptionOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOrdersLoading(true);
+    fetchAdoptionOrders()
+      .then((list) => { if (!cancelled) setOrders(list); })
+      .catch(() => { if (!cancelled) setOrders([]); })
+      .finally(() => { if (!cancelled) setOrdersLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const loggedIn = Boolean(getStoredSession());
+
   const toggleSaved = (id: string) => setSaved((current) => {
     const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
     localStorage.setItem('xm-adopt-saved', JSON.stringify(next));
-    notify(current.includes(id) ? '已取消关注' : '已在本机关注该样板');
+    notify(current.includes(id) ? '已取消关注' : '已关注该认养方案');
     return next;
   });
-  const projectCards = [
-    { id: 'tomato', title: '一季番茄', tagline: '认识土地和种植过程', cycle: '约 90 天', delivery: '了解收获方式', image: '/assets/miniprogram/hero-farm.jpg' },
-    { id: 'vegetable', title: '时令蔬菜', tagline: '看看蔬菜从田间到餐桌', cycle: '按季节变化', delivery: '交付信息待开通', image: '/assets/products/market/green-vegetable.jpg' }
-  ].filter((item) => view === 'available' || saved.includes(item.id));
+
+  const clampProgress = (value: number) => Math.min(100, Math.max(0, value));
+
+  const orderStatusText = (order: AdoptionOrder) => {
+    if (order.statusText) return order.statusText;
+    switch (order.status) {
+      case 'growing': return '生长中';
+      case 'shipped': return '已发货';
+      case 'harvested': return '待采收';
+      case 'completed': return '已完成';
+      default: return '认养中';
+    }
+  };
+
+  const ongoingCount = orders.filter((order) => order.status === 'growing').length;
+  const shippedCount = orders.filter((order) => order.status === 'shipped').length;
+
   return <div className="mp-adopt-page">
     <header className="mp-adopt-head"><b>云认养</b><span>从田间到餐桌</span></header>
     <div className="mp-adopt-switch"><button className={view === 'available' ? 'active' : ''} onClick={() => setView('available')}>发现农场</button><button className={view === 'mine' ? 'active' : ''} onClick={() => setView('mine')}>我的认养</button></div>
-    {view === 'available' && <><button className="mp-adopt-hero" onClick={onDetail}><img src="/assets/miniprogram/hero-farm.jpg" alt=""/><span><small>小满合 · 田园生活</small><b>和一季新鲜，慢慢相遇</b><i>看见生长的每一步，读懂餐桌上的好食材</i><em>走进农场 ›</em></span><label>场景示意</label></button><div className="mp-adopt-quick"><button onClick={onDetail}><img src="/assets/miniprogram/farmer-icons/home.png" alt=""/><span><b>走进农场</b><small>认识土地和种植</small></span>›</button><button onClick={onDetail}><img src="/assets/miniprogram/farmer-icons/camera.png" alt=""/><span><b>生长日记</b><small>图文记录这一季</small></span>›</button></div></>}
-    <section className="mp-adopt-section"><div><b>{view === 'available' ? '认养一份期待' : '我关注的项目'}</b><small>{view === 'available' ? '先了解周期与交付，再选择你的那一季' : '关注项目保存在当前设备'}</small></div><em>体验样板</em></section>
-    {projectCards.map((item) => <article className="mp-adopt-project" key={item.id}><button className="mp-adopt-photo" onClick={onDetail}><img src={item.image} alt=""/><span>蔬菜认养 · 样板</span></button><div className="mp-adopt-info"><b>{item.title}</b><small>{item.tagline}</small><div><span>生长周期 <strong>{item.cycle}</strong></span><span>收获方式 <strong>{item.delivery}</strong></span></div><footer><i>图文方案 · 非交易项目</i><button onClick={onDetail}>了解这一季 ›</button><button className={saved.includes(item.id) ? 'saved' : ''} onClick={() => toggleSaved(item.id)}>{saved.includes(item.id) ? '♥' : '♡'}</button></footer></div></article>)}
-    {!projectCards.length && <div className="mp-adopt-empty"><img src="/assets/miniprogram/farmer-icons/heart.png" alt=""/><b>还没有关注的项目</b><span>点一下项目上的爱心，把喜欢的这一季留下。</span></div>}
-    <section className="mp-adopt-growth"><b>每一步，都值得看见</b><small>一季番茄的图文故事 · 示例记录 / 示意配图</small><div>播种育苗　›　移栽定植　›　开花结果　›　成熟采收</div><img src="/assets/miniprogram/hero-farm.jpg" alt=""/><button onClick={onDetail}>阅读示意日记 ›</button></section>
-    <section className="mp-adopt-notice"><img src="/assets/miniprogram/farmer-icons/shield.png" alt=""/><span><b>先看清楚，再认养</b><small>当前为图文体验样板，关注保存在本机。真实农场、认养下单、配送与远程设备尚未接入。</small></span></section>
-  </div>;
-  const [energy, setEnergy] = useState(156);
-  const [growth, setGrowth] = useState(64);
-  const [watered, setWatered] = useState(false);
-  const [collecting, setCollecting] = useState<number | null>(null);
-  const [collected, setCollected] = useState<number[]>([]);
-  const [liveOpen, setLiveOpen] = useState(false);
-  const [activeCrop, setActiveCrop] = useState<'tomato' | 'rice' | 'orange'>('tomato');
-  const [checkins, setCheckins] = useState(7);
-
-  const cropMap = {
-    tomato: {
-      name: '寿光番茄农场',
-      title: '阳光番茄认养',
-      location: '山东寿光 · A-1 智能温室',
-      stage: '开花坐果期',
-      harvest: '16 天后采收',
-      harvestDate: '2026.06.25',
-      output: '预计到家 12 斤番茄',
-      progress: 64,
-      color: '#ff4d3f',
-      image: '/assets/catalog/shouguang-greenhouse.jpg',
-      productImage: '/assets/products/market/tomato.jpg',
-      owner: '张师傅',
-      message: '今天棚内光照充足，番茄坐果稳定，已完成滴灌和叶面巡检。',
-      diary: [
-        ['播种育苗', '04.05', '/assets/farm/field-base.jpg'],
-        ['移栽定植', '04.15', '/assets/catalog/shouguang-greenhouse.jpg'],
-        ['开花坐果', '05.05', '/assets/farm/greenhouse.jpg'],
-        ['果实膨大', '05.15', '/assets/products/market/tomato.jpg'],
-        ['成熟采收', '05.25', '/assets/farm/tomato-harvest.jpg']
-      ]
-    },
-    rice: {
-      name: '五常稻田守护',
-      title: '五常稻田认养',
-      location: '黑龙江五常 · 龙凤山稻田',
-      stage: '拔节生长期',
-      harvest: '42 天后收割',
-      harvestDate: '2026.08.06',
-      output: '预计到家 10 斤新米',
-      progress: 58,
-      color: '#e7b13b',
-      image: '/assets/farm/rice-field.jpg',
-      productImage: '/assets/products/market/rice-white.jpg',
-      owner: '周师傅',
-      message: '稻田水位稳定，今天已完成田埂巡查，夜间温差适合分蘖生长。',
-      diary: [
-        ['浸种催芽', '04.12', '/assets/products/market/rice.jpg'],
-        ['插秧返青', '05.01', '/assets/farm/rice-field.jpg'],
-        ['分蘖生长', '05.26', '/assets/farm/rice-field.jpg'],
-        ['抽穗扬花', '07.08', '/assets/products/market/rice-scoop.jpg'],
-        ['秋收现碾', '08.06', '/assets/products/market/rice-white.jpg']
-      ]
-    },
-    orange: {
-      name: '奉节脐橙果园',
-      title: '奉节脐橙认养',
-      location: '重庆奉节 · 三峡库区果园',
-      stage: '挂果转甜期',
-      harvest: '23 天后采摘',
-      harvestDate: '2026.07.10',
-      output: '预计到家 8 斤脐橙',
-      progress: 72,
-      color: '#ff8a2a',
-      image: '/assets/products/orange.jpg',
-      productImage: '/assets/catalog/fengjie-orange.jpg',
-      owner: '李师傅',
-      message: '果园今天完成疏果和糖度抽检，果面干净，预计成熟期稳定。',
-      diary: [
-        ['春梢萌发', '03.18', '/assets/catalog/fengjie-orange.jpg'],
-        ['花期授粉', '04.08', '/assets/products/orange.jpg'],
-        ['幼果养护', '05.02', '/assets/catalog/fengjie-orange.jpg'],
-        ['转色增甜', '06.18', '/assets/products/orange.jpg'],
-        ['成熟采摘', '07.10', '/assets/products/market/produce-table.jpg']
-      ]
-    }
-  };
-  const crop = cropMap[activeCrop];
-  const displayedGrowth = activeCrop === 'tomato' ? growth : crop.progress;
-  const energyDrops = [
-    { id: 1, amount: 18, left: '15%', top: '38%' },
-    { id: 2, amount: 26, left: '72%', top: '33%' },
-    { id: 3, amount: 12, left: '79%', top: '59%' }
-  ];
-  const tasks = [
-    { title: '浇水一次', desc: '让作物继续生长', reward: '+20' },
-    { title: '查看实况', desc: '确认今天农场状态', reward: '+18' },
-    { title: '领取周报', desc: '保存本周成长记录', reward: '+16' }
-  ];
-
-  const collectEnergy = (id: number, amount: number) => {
-    if (collected.includes(id)) {
-      notify('这份能量今天已经收取过了');
-      return;
-    }
-    setCollecting(id);
-    window.setTimeout(() => {
-      setCollected((value) => [...value, id]);
-      setEnergy((value) => value + amount);
-      setCollecting(null);
-      notify(`已收取 ${amount}g 农场能量`);
-    }, 520);
-  };
-
-  const waterCrop = () => {
-    if (energy < 20) {
-      notify('能量不足，先完成今日任务补充能量');
-      return;
-    }
-    setWatered(true);
-    setEnergy((value) => Math.max(0, value - 20));
-    setGrowth((value) => Math.min(100, value + 4));
-    setCheckins((value) => value + 1);
-    window.setTimeout(() => setWatered(false), 1300);
-    notify('浇水完成，成长值 +4%');
-  };
-
-  const finishTask = (reward: string) => {
-    const amount = Number(reward.replace(/\D/g, ''));
-    setEnergy((value) => value + amount);
-    notify(`任务完成，能量 ${reward}`);
-  };
-
-  return (
-    <div className="adopt-clone-page">
-      <section className="adopt-clone-head">
-        <div>
-          <h1>云端认养</h1>
-          <p>认养一份希望，收获一份安心</p>
+    {view === 'available' ? (
+      <>
+        <button className="mp-adopt-hero" onClick={onDetail}>
+          <img src="/assets/miniprogram/hero-farm.jpg" alt=""/>
+          <span><small>耘露 · 田园生活</small><b>和一季新鲜，慢慢相遇</b><i>看见生长的每一步，读懂餐桌上的好食材</i><em>走进农场 ›</em></span>
+        </button>
+        <div className="mp-adopt-quick">
+          <button onClick={onDetail}><img src="/assets/miniprogram/farmer-icons/home.png" alt=""/><span><b>走进农场</b><small>认识土地和种植</small></span>›</button>
+          <button onClick={onDetail}><img src="/assets/miniprogram/farmer-icons/camera.png" alt=""/><span><b>生长日记</b><small>图文记录这一季</small></span>›</button>
         </div>
-        <div className="adopt-clone-tools">
-          <button onClick={onDetail}><Sprout size={21} /><span>我的认养</span></button>
-          <button onClick={() => notify('分享卡片已生成')}><MessageCircle size={21} /><span>分享</span></button>
-        </div>
-      </section>
-
-      <section className="adopt-project-switch">
-        {([
-          ['tomato', '番茄温室', '实时看棚'],
-          ['rice', '五常稻田', '秋收新米'],
-          ['orange', '脐橙果园', '糖度跟踪']
-        ] as const).map(([id, title, desc]) => (
-          <button key={id} className={activeCrop === id ? 'active' : ''} onClick={() => setActiveCrop(id)}>
-            <img src={cropMap[id].productImage} alt="" />
-            <span><b>{title}</b><small>{desc}</small></span>
-          </button>
-        ))}
-      </section>
-
-      <section className="adopt-api-projects">
-        <div className="adopt-api-projects-head">
-          <div><b>可认养方案</b><span>{source === 'real' ? '后台实时库存与价格' : source === 'fallback' ? '兼容数据，价格以确认页为准' : '认养服务暂未接入'}</span></div>
-          <DataSourceBadge source={source} compact />
-        </div>
-        {projects.length ? projects.slice(0, 3).map((item) => (
-          <button key={item.id} className="adopt-api-project" onClick={onDetail}>
-            <img src={item.image} alt="" />
-            <span><b>{item.name}</b><small>{item.period} · {item.output} · {item.stage}</small></span>
-            <em>{item.left > 0 ? `余 ${item.left} 份` : '暂时售罄'}</em>
-            <strong>¥{item.price || '待定'}</strong>
-          </button>
-        )) : <p className="data-source-hint">暂无可展示的认养方案，请稍后刷新。</p>}
-      </section>
-
-      <section className="adopt-clone-hero">
-        <img src={crop.image} alt="" />
-        <div className="adopt-clone-badges">
-          <span>{activeCrop === 'tomato' ? '热门认养' : activeCrop === 'rice' ? '基地直播' : '当季认养'}</span>
-          <em><i />直播中</em>
-        </div>
-        <div className="adopt-clone-copy">
-          <h2>{crop.title}</h2>
-          <p><MapPin size={16} />{crop.location}</p>
-        </div>
-      </section>
-
-      <section className="adopt-clone-progress">
-        <article><span>当前生长阶段</span><b><Sprout size={18} />{crop.stage}</b></article>
-        <article><span>生长进度</span><b>{displayedGrowth}%</b><i><em style={{ width: `${displayedGrowth}%` }} /></i></article>
-        <article><span>预计收获</span><b><CalendarDays size={18} />{crop.harvestDate}</b></article>
-      </section>
-
-      <section className="adopt-clone-owner">
-        <img src={crop.productImage} alt="" />
-        <div>
-          <b>来自农场主{crop.owner}的更新</b>
-          <p>{crop.message}</p>
-        </div>
-        <button onClick={() => setLiveOpen(true)}>28"</button>
-      </section>
-
-      <section className="adopt-clone-diary">
-        <div className="adopt-clone-section-title"><b>成长日记</b><button onClick={onDetail}>查看全部</button></div>
-        <div className="adopt-clone-diary-row">
-          {crop.diary.map(([title, date, image], index) => (
-            <button key={title} className={index === 2 ? 'active' : ''} onClick={() => notify(`${title}记录已打开`)}>
-              <img src={image} alt="" />
-              <b>{title}</b>
-              <span>{date}</span>
-              <i />
+        <section className="mp-adopt-section">
+          <div><b>认养一份期待</b><small>先了解周期与交付，再选择你的那一季</small></div>
+          <em>{projects.length} 个方案</em>
+        </section>
+        {projects.length > 0 ? projects.map((item) => (
+          <article className="mp-adopt-project" key={item.id}>
+            <button className="mp-adopt-photo" onClick={onDetail}>
+              <img src={item.image} alt={item.name}/>
+              <span>{item.stage || '认养中'}</span>
             </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="adopt-clone-feature-grid">
-        <button onClick={() => setLiveOpen(true)}><b>远程互动</b><span>视频看田间，随时陪伴成长</span><img src={crop.image} alt="" /></button>
-        <button onClick={onDetail}><b>成长记录</b><span>记录每一刻美好瞬间</span><img src={crop.productImage} alt="" /></button>
-        <button onClick={onDetail}><b>订单售后</b><span>订单管理与售后服务</span><img src="/assets/products/market/produce-table.jpg" alt="" /></button>
-      </section>
-
-      <section className="adopt-clone-cta" onClick={onDetail}>
-        <div><b>查看我的认养</b><span>{crop.output} · 远程互动 · 管理订单</span></div>
-        <img src={crop.productImage} alt="" />
-        <ChevronRight size={26} />
-      </section>
-
-      {liveOpen && (
-        <div className="adopt-v2-live-mask" onClick={() => setLiveOpen(false)}>
-          <section className="adopt-v2-live-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="adopt-v2-live-head">
+            <div className="mp-adopt-info">
+              <b>{item.name}</b>
+              <small>{item.output}</small>
               <div>
-                <span>今日农场实况</span>
-                <b>{crop.name}</b>
+                <span>生长周期 <strong>{item.period}</strong></span>
+                <span>剩余份数 <strong>{item.left > 0 ? `${item.left} 份` : '已售罄'}</strong></span>
               </div>
-              <button onClick={() => setLiveOpen(false)}>关闭</button>
+              <div className="mp-adopt-progress">
+                <span>生长进度 <strong>{item.progress}%</strong></span>
+                <i><em style={{ width: `${clampProgress(item.progress)}%` }} /></i>
+              </div>
+              <footer>
+                <i>¥{item.price || '待定'}/份</i>
+                <button onClick={onDetail}>了解这一季 ›</button>
+                <button className={saved.includes(String(item.id)) ? 'saved' : ''} onClick={() => toggleSaved(String(item.id))}>{saved.includes(String(item.id)) ? '♥' : '♡'}</button>
+              </footer>
             </div>
-            <img src={crop.image} alt={crop.name} />
-            <div className="adopt-v2-live-proof">
-              <span>阶段<b>{crop.stage}</b></span>
-              <span>采收<b>{crop.harvest}</b></span>
-              <span>更新<b>3 张照片</b></span>
-            </div>
-            <p>今天农场主完成晨检和现场拍照，作物长势稳定。成熟后将按认养权益优先采收、打包并寄送到家。</p>
-            <button className="primary" onClick={waterCrop}>{watered ? '已完成今日照料' : '顺手浇水一次'}</button>
-          </section>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <div className="adopt-v2-page">
-      <section className={`adopt-v2-hero ${watered ? 'is-watering' : ''}`} style={{ ['--crop-color' as string]: crop.color }}>
-        <div className="adopt-v2-topbar">
-          <div>
-            <span>MY CLOUD FARM</span>
-            <b>{crop.name}</b>
-          </div>
-          <button onClick={() => setLiveOpen(true)}><CloudSun size={15} />今日实况</button>
-        </div>
-
-        <div className="adopt-v2-score">
-          <span>陪伴值</span>
-          <b>{energy}g</b>
-        </div>
-
-        <div className="adopt-v2-world">
-          <div className="adopt-v2-sun" />
-          <div className="adopt-v2-cloud c1" />
-          <div className="adopt-v2-cloud c2" />
-          <div className="adopt-v2-field-line l1" />
-          <div className="adopt-v2-field-line l2" />
-          <div className="adopt-v2-field-line l3" />
-          <div className={`adopt-v2-plant ${activeCrop}`}>
-            <i className="stem" />
-            <i className="leaf a" />
-            <i className="leaf b" />
-            <i className="leaf c" />
-            <i className="leaf d" />
-            <i className="fruit a" />
-            <i className="fruit b" />
-            <i className="fruit c" />
-            <i className="fruit d" />
-          </div>
-          <div className="adopt-v2-soil"><i /><i /><i /></div>
-          {energyDrops.map((drop) => (
-            <button
-              key={drop.id}
-              className={`adopt-v2-energy ${collected.includes(drop.id) ? 'done' : ''} ${collecting === drop.id ? 'fly' : ''}`}
-              style={{ left: drop.left, top: drop.top }}
-              onClick={() => collectEnergy(drop.id, drop.amount)}
-            >
-              +{drop.amount}
-            </button>
-          ))}
-          {watered && <div className="adopt-v2-rain">{Array.from({ length: 12 }).map((_, index) => <i key={index} />)}</div>}
-          {watered && <div className="adopt-v2-pulse">成长 +4%</div>}
-        </div>
-
-        <div className="adopt-v2-stage-card">
-          <div>
-            <span>{crop.stage}</span>
-            <b>{growth}%</b>
-          </div>
-          <div className="adopt-v2-progress"><i style={{ width: `${growth}%` }} /></div>
-          <p>{crop.harvest} · {crop.output}</p>
-        </div>
-
-        <div className="adopt-v2-actions">
-          <button onClick={waterCrop}>浇水</button>
-          <button onClick={() => setLiveOpen(true)}>看实况</button>
-          <button onClick={onDetail}>成长档案</button>
-        </div>
-      </section>
-
-      <section className="adopt-v2-checkin">
-        <div>
-          <span>连续照料</span>
-          <b>{checkins} 天</b>
-          <p>今天再照料一次，可解锁采收提醒和优先发货权益。</p>
-        </div>
-        <div className="adopt-v2-days">
-          {Array.from({ length: 7 }).map((_, index) => <i className={index < Math.min(7, checkins) ? 'on' : ''} key={index}>{index + 1}</i>)}
-        </div>
-      </section>
-
-      <section className="adopt-v2-crops">
-        {([
-          ['tomato', '番茄', '坐果中'],
-          ['rice', '稻田', '拔节中'],
-          ['orange', '果园', '转甜中']
-        ] as const).map(([id, name, tag]) => (
-          <button className={activeCrop === id ? 'active' : ''} key={id} onClick={() => setActiveCrop(id)}>
-            <span>{name}</span>
-            <b>{tag}</b>
-          </button>
-        ))}
-      </section>
-
-      <section className="adopt-v2-live-card">
-        <div>
-          <span>农场主今日更新</span>
-          <b>08:42 完成晨检，作物状态稳定</b>
-          <p>已上传现场照片、巡检说明和采收预计时间。用户不用看复杂数据，也能知道农场今天发生了什么。</p>
-        </div>
-        <img src={crop.image} alt={crop.name} />
-      </section>
-
-      <section className="adopt-v2-task-card">
-        <div className="adopt-v2-section-head"><b>今日轻互动</b><span>完成后补充能量</span></div>
-        {tasks.map((task) => (
-          <button key={task.title} onClick={() => finishTask(task.reward)}>
-            <Sprout size={17} />
-            <span><b>{task.title}</b><small>{task.desc}</small></span>
-            <em>{task.reward}</em>
-          </button>
-        ))}
-      </section>
-
-      <section className="adopt-v2-projects">
-        <div className="adopt-v2-section-head"><b>可认养农场</b><span>真实产出，到季寄送</span></div>
-        {[
-          ['寿光番茄农场', '90 天周期 · 到季约 12 斤', '剩余 18 份', '¥199/季', '/assets/farm/greenhouse.jpg'],
-          ['五常稻田守护', '120 天周期 · 到季约 10 斤', '剩余 25 份', '¥269/季', '/assets/farm/rice-field.jpg']
-        ].map(([name, desc, left, price, image]) => (
-          <article key={name} onClick={onDetail}>
-            <img src={image} alt={name} />
-            <div>
-              <b>{name}</b>
-              <p>{desc}</p>
-              <span>{left}</span>
-            </div>
-            <strong>{price}</strong>
           </article>
-        ))}
+        )) : (
+          <div className="mp-adopt-empty">
+            <img src="/assets/miniprogram/farmer-icons/heart.png" alt=""/>
+            <b>{source !== 'real' ? '认养方案加载中…' : '暂无认养方案'}</b>
+            <span>{source !== 'real' ? '正在从农场获取最新认养方案，请稍候。' : '农场暂未上架可认养的方案，敬请期待。'}</span>
+          </div>
+        )}
+      </>
+    ) : (
+      <section className="mp-adopt-mine">
+        {!loggedIn ? (
+          <div className="mp-adopt-empty">
+            <img src="/assets/miniprogram/farmer-icons/heart.png" alt=""/>
+            <b>登录后查看我的认养</b>
+            <span>登录后可查看认养订单、生长进度与预计采收时间。</span>
+          </div>
+        ) : ordersLoading && orders.length === 0 ? (
+          <div className="mp-adopt-empty"><b>认养订单加载中…</b><span>正在同步你的认养订单。</span></div>
+        ) : orders.length === 0 ? (
+          <div className="mp-adopt-empty">
+            <img src="/assets/miniprogram/farmer-icons/heart.png" alt=""/>
+            <b>还没有认养订单</b>
+            <span>去发现农场挑选一份认养方案，开始这一季的陪伴。</span>
+          </div>
+        ) : (
+          <>
+            <div className="mp-adopt-stats">
+              <div><b>{orders.length}</b><span>认养订单</span></div>
+              <div><b>{ongoingCount}</b><span>进行中</span></div>
+              <div><b>{shippedCount}</b><span>待收货</span></div>
+            </div>
+            {orders.map((order) => (
+              <article className="mp-adopt-order" key={order.id || order.orderNo}>
+                <div className="mp-adopt-order-head">
+                  <b>{order.packageName || order.productName || '认养订单'}</b>
+                  <span>{orderStatusText(order)}</span>
+                </div>
+                <div className="mp-adopt-order-growth">
+                  <span>生长进度 <b>{order.growthPercent}%</b></span>
+                  <i><em style={{ width: `${clampProgress(order.growthPercent)}%` }} /></i>
+                </div>
+                <div className="mp-adopt-order-meta">
+                  <span>订单号 <b>{order.orderNo}</b></span>
+                  <span>预计采收 <b>{order.harvestDate || '待定'}</b></span>
+                </div>
+                <footer><button onClick={onDetail}>查看生长日记 ›</button></footer>
+              </article>
+            ))}
+          </>
+        )}
       </section>
-
-      {liveOpen && (
-        <div className="adopt-v2-live-mask" onClick={() => setLiveOpen(false)}>
-          <section className="adopt-v2-live-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="adopt-v2-live-head">
-              <div>
-                <span>今日农场实况</span>
-                <b>{crop.name}</b>
-              </div>
-              <button onClick={() => setLiveOpen(false)}>关闭</button>
-            </div>
-            <img src={crop.image} alt={crop.name} />
-            <div className="adopt-v2-live-proof">
-              <span>阶段<b>{crop.stage}</b></span>
-              <span>采收<b>{crop.harvest}</b></span>
-              <span>更新<b>3 张照片</b></span>
-            </div>
-            <p>今天农场主完成晨检和现场拍照，作物长势稳定。成熟后将按认养权益优先采收、打包并寄送到家。</p>
-            <button className="primary" onClick={waterCrop}>{watered ? '已完成今日照料' : '顺手浇水一次'}</button>
-          </section>
-        </div>
-      )}
-    </div>
-  );
+    )}
+  </div>;
 }
 
 function Adopt({ onDetail, notify }: { onDetail: () => void; notify: (message: string) => void }) {
@@ -2041,15 +1889,15 @@ const farmerCrops = [
 ];
 
 const farmerArchives = [
-  { id: 1, name: '高原番茄', icon: '🍅', area: '3.5亩', plantDays: 65, status: '生长期', yield: '约2800斤', photo: '/assets/products/market/tomato.jpg', note: '使用有机肥，长势良好。注意预防晚疫病。' },
-  { id: 2, name: '线椒', icon: '🌶️', area: '2.0亩', plantDays: 42, status: '结果期', yield: '约1500斤', photo: '/assets/products/market/green-vegetable.jpg', note: '已进入采收期，注意及时采摘避免老化。' },
-  { id: 3, name: '紫皮土豆', icon: '🥔', area: '5.0亩', plantDays: 15, status: '幼苗期', yield: '约6000斤', photo: '/assets/farm/field-base.jpg', note: '刚出苗，注意保温和浇水管理。' }
+  { id: 1, name: '高原番茄', icon: '/assets/icons/icon-tomato.png', area: '3.5亩', plantDays: 65, status: '生长期', yield: '约2800斤', photo: '/assets/products/market/tomato.jpg', note: '使用有机肥，长势良好。注意预防晚疫病。' },
+  { id: 2, name: '线椒', icon: '/assets/icons/icon-bell-pepper.png', area: '2.0亩', plantDays: 42, status: '结果期', yield: '约1500斤', photo: '/assets/products/market/green-vegetable.jpg', note: '已进入采收期，注意及时采摘避免老化。' },
+  { id: 3, name: '紫皮土豆', icon: '/assets/icons/icon-potato.png', area: '5.0亩', plantDays: 15, status: '幼苗期', yield: '约6000斤', photo: '/assets/farm/field-base.jpg', note: '刚出苗，注意保温和浇水管理。' }
 ];
 
 const farmerHistory = [
-  { id: 1, crop: '番茄叶片', date: '今天 09:30', status: '已处理', icon: '🍅', desc: '叶片健康，无病害迹象，光合作用状态良好。' },
-  { id: 2, crop: '辣椒蚜虫', date: '昨天 14:20', status: '待观察', icon: '🌶️', desc: '少量蚜虫聚集，建议 3 天后复查虫口密度。' },
-  { id: 3, crop: '黄瓜白粉病', date: '03-26 08:45', status: '待观察', icon: '🥒', desc: '检测到白粉病早期症状，建议加强通风。' }
+  { id: 1, crop: '番茄叶片', date: '今天 09:30', status: '已处理', icon: '/assets/icons/icon-tomato.png', desc: '叶片健康，无病害迹象，光合作用状态良好。' },
+  { id: 2, crop: '辣椒蚜虫', date: '昨天 14:20', status: '待观察', icon: '/assets/icons/icon-bell-pepper.png', desc: '少量蚜虫聚集，建议 3 天后复查虫口密度。' },
+  { id: 3, crop: '黄瓜白粉病', date: '03-26 08:45', status: '待观察', icon: '/assets/icons/icon-cucumber.png', desc: '检测到白粉病早期症状，建议加强通风。' }
 ];
 
 const farmerCommunityPosts = [
@@ -2091,7 +1939,7 @@ const farmerCommunityPosts = [
     levelText: '👑传奇',
     location: '甘肃·兰州',
     time: '昨天',
-    content: '用了小满AI识别功能，提前发现了玉米叶斑病。及时处理后保住了大部分产量，科技确实能改变农业。',
+    content: '用了小露AI识别功能，提前发现了玉米叶斑病。及时处理后保住了大部分产量，科技确实能改变农业。',
     hasVoice: true,
     voiceDuration: '45',
     likes: 256,
@@ -2134,63 +1982,98 @@ function FarmerHeaderMP({ title, right }: { title: string; right?: import('react
 
 function FarmerHomeMP({ onTab, onPage }: { onTab: (tab: FarmerTab) => void; onPage: (page: FarmerPage) => void }) {
   const [noticeRead, setNoticeRead] = useState(false);
+  const [taskCount, setTaskCount] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [cropCount, setCropCount] = useState(0);
+  const [weatherText, setWeatherText] = useState('晴 26°C');
+  const [aiAdvice, setAiAdvice] = useState('');
+  const [aiAdviceLoading, setAiAdviceLoading] = useState(true);
   const reminders = [
     { name: '番茄第二茬追肥', tag: '进行中', time: '今天 09:00', status: 'doing' },
     { name: '辣椒地除草作业', tag: '待处理', time: '明天 08:00', status: 'todo' },
     { name: '检查大棚通风设备', tag: '紧急', time: '今天 15:00前', status: 'urgent' }
   ];
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchFarmTasks(), fetchFarmerCrops(), fetchWeather()]).then(([tasks, crops, weather]) => {
+      if (!alive) return;
+      if (tasks.length) { setTaskCount(tasks.length); setDoneCount(tasks.filter((t) => t.completed).length); }
+      if (crops.length) setCropCount(crops.length);
+      if (weather) setWeatherText(`${weather.desc || '晴'} ${weather.temp}°C`);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setAiAdviceLoading(true);
+    askAi('给我一条今日农事管理建议', 'farmer')
+      .then((answer) => {
+        if (!alive) return;
+        setAiAdvice(answer);
+        setAiAdviceLoading(false);
+      })
+      .catch(() => {
+        if (alive) setAiAdviceLoading(false);
+      });
+    return () => { alive = false; };
+  }, []);
+
+  const pendingCount = Math.max(0, taskCount - doneCount);
+  const progressPercent = taskCount ? Math.round((doneCount / taskCount) * 100) : 20;
   return (
     <div className="farmer-mp home-mp home-replica">
       <section className="home-top-card">
         <div className="home-nav-row">
-          <button onClick={() => onPage('locationMap')}>📍 昆明</button>
-          <button onClick={() => onPage('weatherDetail')}>☀️ 晴 26°C</button>
-          <button className={noticeRead ? 'read' : ''} onClick={() => setNoticeRead(true)}>🔔</button>
+          <button onClick={() => onPage('locationMap')}><img src="/assets/icons/icon-location.png" alt="" className="fmy-inline-icon" /> 昆明</button>
+          <button onClick={() => onPage('weatherDetail')}><img src="/assets/icons/icon-sun.png" alt="" className="fmy-inline-icon" /> {weatherText}</button>
+          <button className={noticeRead ? 'read' : ''} onClick={() => setNoticeRead(true)}><img src="/assets/icons/icon-bell.png" alt="" className="fmy-grid-icon" /></button>
         </div>
         <h2>下午好，农友</h2>
-        <p>今日 {todayMonthDay} · 5项农事待处理</p>
-        <small className="farmer-sample-note">体验样板 · 天气、任务与农场数据为示例</small>
+        <p>今日 {todayMonthDay} · {pendingCount || '暂无'}项农事待处理</p>
+        <small className="farmer-sample-note">{taskCount ? '数据已同步' : '体验样板 · 天气、任务与农场数据为示例'}</small>
       </section>
 
       <section className="assistant-card">
         <div className="assistant-head">
           <div className="assistant-title-row">
-            <span>🌾</span>
+            <span><img src="/assets/icons/icon-rice.png" alt="" className="fmy-grid-icon" /></span>
             <div><b>农事助手</b><small>今日 {todayMonthDay} · 午后作业提醒</small></div>
           </div>
-          <em>5项待办</em>
+          <em>{pendingCount}项待办</em>
         </div>
         <div className="assistant-progress-row">
-          <div className="mp-progress"><i style={{ width: '20%' }} /></div>
-          <div><span>✓ 已完成1</span><span>5项</span></div>
+          <div className="mp-progress"><i style={{ width: `${progressPercent}%` }} /></div>
+          <div><span><img src="/assets/icons/icon-check.png" alt="" className="fmy-inline-icon" /> 已完成{doneCount}</span><span>{taskCount}项</span></div>
         </div>
         <div className="assistant-grid">
-          <button onClick={() => onTab('farming')}><span>📅</span><b>农事日历</b><small>5项今日</small></button>
-          <button onClick={() => onPage('myCrops')}><span>🌾</span><b>种植档案</b><small>3种在管</small></button>
-          <button onClick={() => onPage('myCrops')}><span>💰</span><b>收益统计</b><small>查看明细</small></button>
-          <button onClick={() => onTab('environment')}><span>🌡️</span><b>环境监测</b><small>实时监控</small></button>
+          <button onClick={() => onTab('farming')}><span><img src="/assets/icons/icon-calendar.png" alt="" className="fmy-grid-icon" /></span><b>农事日历</b><small>{taskCount}项今日</small></button>
+          <button onClick={() => onPage('myCrops')}><span><img src="/assets/icons/icon-rice.png" alt="" className="fmy-grid-icon" /></span><b>种植档案</b><small>{cropCount}种在管</small></button>
+          <button onClick={() => onPage('myCrops')}><span><img src="/assets/icons/icon-chart.png" alt="" className="fmy-grid-icon" /></span><b>收益统计</b><small>查看明细</small></button>
+          <button onClick={() => onTab('environment')}><span><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-grid-icon" /></span><b>环境监测</b><small>实时监控</small></button>
         </div>
-        <div className="weather-strip"><b>☀️ 26°C</b><span>晴朗</span><i /> <span>💧58%</span><i /><span>🌬️2级风</span></div>
-        <div className="ai-tip"><span>🤖</span><p>农事建议体验样板。实时天气、传感器数据与 AI 决策服务尚未接入。</p></div>
+        <div className="weather-strip"><b><img src="/assets/icons/icon-sun.png" alt="" className="fmy-inline-icon" /> {weatherText}</b><span>晴朗</span><i /> <span><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" />58%</span><i /><span><img src="/assets/icons/icon-fog.png" alt="" className="fmy-inline-icon" />2级风</span></div>
+        <div className="ai-tip"><span><img src="/assets/icons/icon-ai.png" alt="" className="fmy-grid-icon" /></span><p>AI 农事建议已接入，天气与传感器数据实时同步，点击「AI 智能决策」查看今日建议。</p></div>
       </section>
 
       <section className="mp-grid-six">
-        <button onClick={() => onPage('voiceAssistant')}><span>📷</span><b>拍照识别</b></button>
-        <button onClick={() => onPage('myCrops')}><span>🌱</span><b>我的作物</b></button>
-        <button onClick={() => onPage('voiceAssistant')}><span>🎤</span><b>语音助手</b></button>
-        <button onClick={() => onPage('warningCenter')}><span>⚠️</span><b>最新预警</b></button>
-        <button onClick={() => onPage('techSupport')}><span>🛠️</span><b>技术支持</b></button>
-        <button onClick={() => onPage('weatherDetail')}><span>🌤️</span><b>天气详情</b></button>
+        <button onClick={() => onPage('voiceAssistant')}><span><img src="/assets/icons/icon-camera.png" alt="" className="fmy-grid-icon" /></span><b>拍照识别</b></button>
+        <button onClick={() => onPage('myCrops')}><span><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-grid-icon" /></span><b>我的作物</b></button>
+        <button onClick={() => onPage('voiceAssistant')}><span><img src="/assets/icons/icon-mic.png" alt="" className="fmy-grid-icon" /></span><b>语音助手</b></button>
+        <button onClick={() => onPage('warningCenter')}><span><img src="/assets/icons/icon-announce.png" alt="" className="fmy-grid-icon" /></span><b>最新预警</b></button>
+        <button onClick={() => onPage('techSupport')}><span><img src="/assets/icons/icon-expert.png" alt="" className="fmy-grid-icon" /></span><b>技术支持</b></button>
+        <button onClick={() => onPage('weatherDetail')}><span><img src="/assets/icons/icon-cloudy.png" alt="" className="fmy-grid-icon" /></span><b>天气详情</b></button>
       </section>
 
       <section className="decision-card">
-        <div className="mp-section-title"><b>✨ AI智能决策</b><em>最新</em></div>
-        <p>当前展示农事建议体验样板，不连接实时气象、传感器或作物数据。</p>
-        <footer><span>示例内容</span><span>服务尚未接入</span><button onClick={() => onPage('voiceAssistant')}>查看服务状态 ›</button></footer>
+        <div className="mp-section-title"><b><img src="/assets/icons/icon-ai.png" alt="" className="fmy-inline-icon" /> AI智能决策</b><em>最新</em></div>
+        <p>{aiAdviceLoading ? '正在生成建议…' : (aiAdvice || '当前展示农事建议体验样板，不连接实时气象、传感器或作物数据。')}</p>
+        <footer><span>AI 农事建议</span><span>{aiAdviceLoading ? '生成中' : '已接入'}</span><button onClick={() => onPage('voiceAssistant')}>AI 对话 ›</button></footer>
       </section>
 
       <section className="home-reminder-card">
-        <div className="mp-section-title"><b>📋 农事提醒</b><button onClick={() => onTab('farming')}>查看全部 ›</button></div>
+        <div className="mp-section-title"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 农事提醒</b><button onClick={() => onTab('farming')}>查看全部 ›</button></div>
         <div className="home-reminder-list">
           {reminders.map((item) => (
             <article key={item.name} className={item.status}>
@@ -2208,48 +2091,162 @@ function FarmerShopMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; 
   const [mode, setMode] = useState<'platform' | 'self'>('platform');
   const [filter, setFilter] = useState<'all' | 'selling' | 'review'>('all');
   const [sheet, setSheet] = useState<null | 'upload' | 'filter' | 'chat' | 'wallet' | 'logistics' | 'afterSale'>(null);
-  const [draft, setDraft] = useState({ name: '', price: '', desc: '' });
-  const [productList, setProductList] = useState([
-    { id: 1, name: '高原有机番茄', price: '38.00', unit: '5斤装', sales: 128, status: 'selling', statusText: '在售', image: '/assets/products/market/tomato.jpg' },
-    { id: 2, name: '农家自种辣椒', price: '12.50', unit: '1斤', sales: 86, status: 'selling', statusText: '在售', image: '/assets/products/market/green-vegetable.jpg' },
-    { id: 3, name: '云南紫皮土豆', price: '45.00', unit: '10斤', sales: 234, status: 'review', statusText: '审核中', image: '/assets/farm/field-base.jpg' }
-  ]);
+  const [draft, setDraft] = useState({ name: '', price: '', desc: '', unit: '份', category: '蔬菜', images: [] as string[], stock: '', origin: '', lat: undefined as number | undefined, lng: undefined as number | undefined });
+  const [uploading, setUploading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const unitOptions = ['斤', '袋', '盒', '箱', '份', '根', '个'];
+  const shopCategoryOptions = APP_CATEGORIES.filter((item) => item.id !== 'all');
+  const [productList, setProductList] = useState<Array<{ id: string; name: string; price: string; unit: string; sales: number; status: string; statusText: string; image: string; statusCode: number; rejectReason?: string }>>([]);
+
+  const refreshProducts = () => {
+    fetchFarmerProducts().then((list) => {
+      const mapped = list.map((p) => ({ id: p.id, name: p.name, price: p.priceText, unit: p.unit, sales: p.sales, status: p.status === 1 ? 'selling' : 'review', statusText: p.statusText, image: p.image, statusCode: p.status, rejectReason: p.rejectReason }));
+      setProductList(mapped);
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerProducts().then((list) => {
+      if (!alive) return;
+      const mapped = list.map((p) => ({ id: p.id, name: p.name, price: p.priceText, unit: p.unit, sales: p.sales, status: p.status === 1 ? 'selling' : 'review', statusText: p.statusText, image: p.image, statusCode: p.status, rejectReason: p.rejectReason }));
+      setProductList(mapped.length ? mapped : [
+        { id: 'demo-1', name: '高原有机番茄', price: '38.00', unit: '5斤装', sales: 128, status: 'selling', statusText: '在售', image: '/assets/products/market/tomato.jpg', statusCode: 1 },
+        { id: 'demo-2', name: '农家自种辣椒', price: '12.50', unit: '1斤', sales: 86, status: 'selling', statusText: '在售', image: '/assets/products/market/green-vegetable.jpg', statusCode: 1 },
+        { id: 'demo-3', name: '云南紫皮土豆', price: '45.00', unit: '10斤', sales: 234, status: 'review', statusText: '待审核', image: '/assets/farm/field-base.jpg', statusCode: 2 }
+      ]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const visible = filter === 'all' ? productList : productList.filter((item) => item.status === filter);
-  const submit = () => {
+  const onPickImage = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      notify('请选择图片文件');
+      return;
+    }
+    if (draft.images.length >= 4) {
+      notify('最多上传 4 张图片');
+      return;
+    }
+    try {
+      setUploading(true);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const result = await uploadImageBase64(file.type, base64);
+      if (result.url) {
+        setDraft((prev) => ({ ...prev, images: [...prev.images, imageURL(result.url)] }));
+        notify('图片已上传');
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : '图片上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+  const locate = async () => {
+    setLocating(true);
+    try {
+      const coords = await resolveCurrentCoords();
+      if (coords) {
+        setDraft((prev) => ({ ...prev, lat: coords.latitude, lng: coords.longitude }));
+        notify('已定位');
+      } else {
+        notify('定位失败，可手动留空');
+      }
+    } catch {
+      notify('定位失败，可手动留空');
+    } finally {
+      setLocating(false);
+    }
+  };
+  const submit = async () => {
     if (!draft.name.trim() || !draft.price.trim()) {
       notify('请填写商品名称和价格');
       return;
     }
-    setProductList((prev) => [{ id: Date.now(), name: draft.name, price: Number(draft.price).toFixed(2), unit: '自定义规格', sales: 0, status: 'review', statusText: '审核中', image: '/assets/products/market/produce-table.jpg' }, ...prev]);
-    setDraft({ name: '', price: '', desc: '' });
-    setSheet(null);
-    notify('商品已提交审核');
+    const priceNum = Number(draft.price);
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      notify('请输入有效价格');
+      return;
+    }
+    const stockNum = Number(draft.stock);
+    if (draft.stock.trim() !== '' && (!Number.isFinite(stockNum) || stockNum < 0)) {
+      notify('请输入有效库存');
+      return;
+    }
+    try {
+      await createFarmerProduct({
+        name: draft.name.trim(),
+        priceFen: Math.round(priceNum * 100),
+        description: draft.desc.trim(),
+        unit: draft.unit,
+        categoryId: draft.category,
+        stock: draft.stock.trim() === '' ? 0 : Math.round(stockNum),
+        origin: draft.origin.trim(),
+        lat: draft.lat,
+        lng: draft.lng,
+        status: 2,
+        images: draft.images,
+      });
+      setDraft({ name: '', price: '', desc: '', unit: '份', category: '蔬菜', images: [], stock: '', origin: '', lat: undefined, lng: undefined });
+      setSheet(null);
+      notify('商品已提交审核');
+      // 刷新列表
+      refreshProducts();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '商品提交失败');
+    }
+  };
+  const resubmitProduct = async (id: string) => {
+    try {
+      await submitFarmerProduct(id);
+      notify('已重新提交审核');
+      refreshProducts();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '重新提交失败');
+    }
+  };
+  const offShelfProduct = async (id: string) => {
+    try {
+      await offShelfFarmerProduct(id);
+      notify('商品已下架');
+      refreshProducts();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '下架失败');
+    }
   };
   return (
     <div className="farmer-mp shop-mp shop-replica">
-      <section className="shop-page-header"><h2>🏪 我的店铺</h2><small className="farmer-sample-note">体验样板 · 商品与经营数据为示例</small></section>
+      <section className="shop-page-header"><h2><img src="/assets/icons/icon-cart.png" alt="" className="fmy-inline-icon" /> 我的店铺</h2><small className="farmer-sample-note">体验样板 · 商品与经营数据为示例</small></section>
       <section className="shop-mode-switch replica">
         <button className={`mode-btn ${mode === 'platform' ? 'active platform-mode' : ''}`} onClick={() => setMode('platform')}>
-          <span className="mode-icon">🏢</span><b className="mode-text">平台托管</b><small className="mode-desc">省心卖货</small>
+          <span className="mode-icon"><img src="/assets/icons/icon-cart.png" alt="" className="fmy-grid-icon" /></span><b className="mode-text">平台托管</b><small className="mode-desc">省心卖货</small>
         </button>
         <button className={`mode-btn self-mode ${mode === 'self' ? 'active' : ''}`} onClick={() => setMode('self')}>
-          <span className="mode-icon">🛒</span><b className="mode-text">自主售卖</b><small className="mode-desc">自己管理</small>
+          <span className="mode-icon"><img src="/assets/icons/icon-cart.png" alt="" className="fmy-grid-icon" /></span><b className="mode-text">自主售卖</b><small className="mode-desc">自己管理</small>
         </button>
       </section>
       <section className="shop-quick-entry">
-        <button onClick={() => setSheet('upload')}><span>📸</span><b>商品拍照上传</b></button>
-        <button onClick={() => setSheet('filter')}><span>🔍</span><b>品种筛选</b></button>
+        <button onClick={() => setSheet('upload')}><span><img src="/assets/icons/icon-camera.png" alt="" className="fmy-grid-icon" /></span><b>商品拍照上传</b></button>
+        <button onClick={() => setSheet('filter')}><span><img src="/assets/icons/icon-search.png" alt="" className="fmy-grid-icon" /></span><b>品种筛选</b></button>
       </section>
       <section className="shop-func-grid">
-        <button onClick={() => setSheet('chat')}><span>💬</span><b>客户聊天</b><em>3</em></button>
-        <button onClick={() => setSheet('wallet')}><span>💰</span><b>收益钱包</b></button>
-        <button onClick={() => setSheet('logistics')}><span>🚚</span><b>物流管理</b></button>
-        <button onClick={() => setSheet('afterSale')}><span>🎧</span><b>售后客服</b></button>
-        <button onClick={() => onPage('farmerOrders')}><span>📦</span><b>订单管理</b></button>
+        <button onClick={() => setSheet('chat')}><span><img src="/assets/icons/icon-chat.png" alt="" className="fmy-grid-icon" /></span><b>客户聊天</b><em>3</em></button>
+        <button onClick={() => setSheet('wallet')}><span><img src="/assets/icons/icon-chart.png" alt="" className="fmy-grid-icon" /></span><b>收益钱包</b></button>
+        <button onClick={() => setSheet('logistics')}><span><img src="/assets/icons/truck.png" alt="" className="fmy-grid-icon" /></span><b>物流管理</b></button>
+        <button onClick={() => setSheet('afterSale')}><span><img src="/assets/icons/icon-chat.png" alt="" className="fmy-grid-icon" /></span><b>售后客服</b></button>
+        <button onClick={() => onPage('farmerOrders')}><span><img src="/assets/icons/package.png" alt="" className="fmy-grid-icon" /></span><b>订单管理</b></button>
       </section>
       <section className="shop-cloud-card" onClick={() => onPage('adoptionCenter')}>
         <div>
-          <b>☁️ 云店铺</b>
+          <b><img src="/assets/icons/icon-cloud.png" alt="" className="fmy-inline-icon" /> 云店铺</b>
           <span>认养订单管理中心</span>
           <small>6 个进行中认养</small>
         </div>
@@ -2257,7 +2254,7 @@ function FarmerShopMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; 
       </section>
       <section className="shop-product-section">
         <div className="shop-section-header">
-          <b>📦 我的商品</b>
+          <b><img src="/assets/icons/package.png" alt="" className="fmy-inline-icon" /> 我的商品</b>
           <div>
             {([['all', '全部'], ['selling', '在售'], ['review', '审核中']] as const).map(([id, label]) => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
           </div>
@@ -2265,11 +2262,18 @@ function FarmerShopMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; 
         <div className="shop-product-list">
           {visible.map((item) => (
             <article className="shop-product-card" key={item.id}>
-              <div className="shop-product-img" style={{ backgroundImage: `url(${item.image})` }}><em className={item.status}>{item.statusText}</em></div>
+              <div className="shop-product-img" style={{ backgroundImage: `url(${item.image})` }}><em className={item.statusCode === 3 ? 'reject' : item.status}>{item.statusText}</em></div>
               <div className="shop-product-info">
                 <b>{item.name}</b>
                 <p><strong>¥{item.price}</strong><span>/{item.unit}</span></p>
                 <small>已售 {item.sales}件</small>
+                {item.statusCode === 3 && item.rejectReason ? <span className="shop-product-reject">驳回原因：{item.rejectReason}</span> : null}
+                {(item.statusCode === 3 || item.statusCode === 1) && (
+                  <div className="shop-product-actions">
+                    {item.statusCode === 3 ? <button type="button" onClick={() => resubmitProduct(item.id)}>重新提交</button> : null}
+                    {item.statusCode === 1 ? <button type="button" onClick={() => offShelfProduct(item.id)}>下架</button> : null}
+                  </div>
+                )}
               </div>
             </article>
           ))}
@@ -2278,14 +2282,36 @@ function FarmerShopMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; 
       {sheet && (
         <div className="farmer-modal-mask" onClick={() => setSheet(null)}>
           <section className="mp-sheet shop-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="farmer-modal-head"><b>{sheet === 'upload' ? '📸 商品拍照上传' : sheet === 'filter' ? '🔍 品种筛选' : sheet === 'chat' ? '客户聊天' : sheet === 'wallet' ? '收益钱包' : sheet === 'logistics' ? '物流管理' : '售后客服'}</b><button onClick={() => setSheet(null)}>×</button></div>
+            <div className="farmer-modal-head"><b>{sheet === 'upload' ? <><img src="/assets/icons/icon-camera.png" alt="" className="fmy-inline-icon" /> 商品拍照上传</> : sheet === 'filter' ? <><img src="/assets/icons/icon-search.png" alt="" className="fmy-inline-icon" /> 品种筛选</> : sheet === 'chat' ? '客户聊天' : sheet === 'wallet' ? '收益钱包' : sheet === 'logistics' ? '物流管理' : '售后客服'}</b><button onClick={() => setSheet(null)}>×</button></div>
             {sheet === 'upload' ? (
               <div className="mp-form">
-                <button className="photo-upload">📷 上传商品照片</button>
+                <div className="shop-upload-images">
+                  {draft.images.map((url, index) => (
+                    <span className="shop-upload-thumb" key={url}>
+                      <img src={url} alt=""/>
+                      <button type="button" onClick={() => setDraft((prev) => ({ ...prev, images: prev.images.filter((_, i) => i !== index) }))}>×</button>
+                    </span>
+                  ))}
+                  {draft.images.length < 4 && (
+                    <button type="button" className="shop-upload-add" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                      {uploading ? '上传中…' : '＋ 添加图片'}
+                    </button>
+                  )}
+                  <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void onPickImage(file); event.target.value = ''; }} />
+                </div>
                 <label>商品名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="如：高原有机番茄" /></label>
                 <label>销售价格<input value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} placeholder="如：38" inputMode="decimal" /></label>
+                <label>库存<input value={draft.stock} onChange={(event) => setDraft({ ...draft, stock: event.target.value })} placeholder="如：100" inputMode="numeric" /></label>
+                <label>产地<input value={draft.origin} onChange={(event) => setDraft({ ...draft, origin: event.target.value })} placeholder="如：云南昆明" /></label>
+                <div className="shop-form-field shop-locate-field">
+                  <span>定位</span>
+                  <button type="button" className="shop-locate-btn" onClick={locate} disabled={locating}>{locating ? '定位中…' : '📍 获取定位'}</button>
+                  <small className="shop-locate-status">{draft.lat !== undefined && draft.lng !== undefined ? `已定位 纬度${draft.lat.toFixed(4)} 经度${draft.lng.toFixed(4)}` : '未定位'}</small>
+                </div>
+                <div className="shop-form-field"><span>单位</span><div className="shop-chip-row">{unitOptions.map((unit) => <button type="button" key={unit} className={draft.unit === unit ? 'active' : ''} onClick={() => setDraft({ ...draft, unit })}>{unit}</button>)}</div></div>
+                <div className="shop-form-field"><span>品种分类</span><div className="shop-chip-row">{shopCategoryOptions.map((item) => <button type="button" key={item.id} className={draft.category === item.name ? 'active' : ''} onClick={() => setDraft({ ...draft, category: item.name })}>{item.name}</button>)}</div></div>
                 <label>商品说明<textarea value={draft.desc} onChange={(event) => setDraft({ ...draft, desc: event.target.value })} placeholder="产地、规格、采摘时间、配送说明" /></label>
-                <button className="mp-primary" onClick={submit}>提交审核</button>
+                <button className="mp-primary" onClick={submit} disabled={uploading}>提交审核</button>
               </div>
             ) : <ShopRows rows={sheet === 'filter' ? [['蔬菜类', '番茄、辣椒、土豆', '应用'], ['水果类', '草莓、橙子、苹果', '应用']] : sheet === 'wallet' ? [['累计收益', '¥12,680.50', '去提现'], ['本月收入', '¥3,240.00', '明细'], ['待结算', '¥856.00', '查看']] : sheet === 'logistics' ? [['高原有机番茄', '李女士 · 待发货', '安排发货'], ['云南紫皮土豆', '赵女士 · 运输中', '查看物流']] : sheet === 'afterSale' ? [['退换货申请', '番茄收到有损坏', '处理'], ['退款申请', '土豆规格发错', '查看']] : [['李女士', '番茄什么时候发货？', '回复'], ['王先生', '已下单，麻烦尽快发', '查看'], ['陈老板', '想批量采购辣椒100斤', '沟通']]} />}
           </section>
@@ -2297,11 +2323,32 @@ function FarmerShopMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; 
 
 function FarmingMP() {
   const [selectedDay, setSelectedDay] = useState(todayDay);
-  const [done, setDone] = useState(['番茄棚补水']);
+  const [done, setDone] = useState<string[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', time: '08:30', type: '巡检' });
   const [extraTasks, setExtraTasks] = useState<Array<{ title: string; time: string; type: string; plot: string; owner: string; priority: string; source: string }>>([]);
-  const toggle = (name: string) => setDone((prev) => prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]);
+  const [serverTasks, setServerTasks] = useState<FarmTask[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmTasks().then((list) => {
+      if (!alive) return;
+      if (list.length) {
+        setServerTasks(list);
+        setDone(list.filter((t) => t.completed).map((t) => t.name));
+      }
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+    return () => { alive = false; };
+  }, []);
+
+  const toggle = (name: string) => {
+    const willDone = !done.includes(name);
+    setDone((prev) => willDone ? [...prev, name] : prev.filter((item) => item !== name));
+    const task = serverTasks.find((t) => t.name === name);
+    if (task) completeFarmTask(task.id, willDone).catch(() => {});
+  };
   const monthDays = 30;
   const leadingBlank = 1;
   const cells = [
@@ -2310,16 +2357,20 @@ function FarmingMP() {
     ...Array.from({ length: 35 - leadingBlank - monthDays }, () => null)
   ];
   const taskDays = [3, 8, 13, 17, 22, 26];
-  const baseTasks = [
-    { title: '番茄棚补水', time: '08:30-09:00', type: '水肥管理', plot: '1号番茄棚 · A区', owner: '张大叔', priority: 'urgent', source: '环境湿度触发' },
-    { title: '复核土壤湿度传感器', time: '09:10-09:25', type: '环境巡检', plot: '1号番茄棚 · 传感器03', owner: '李师傅', priority: 'normal', source: '设备巡检计划' },
-    { title: '记录花期病虫害观察', time: '15:00-15:20', type: '植保记录', plot: '番茄花果期样本行', owner: '张大叔', priority: 'important', source: '作物阶段提醒' },
-    { title: '检查大棚通风设备', time: '17:20-17:40', type: '设备维护', plot: '卷膜机/通风扇', owner: '王工', priority: 'normal', source: '晚间闭棚前检查' }
-  ];
+  const baseTasks: Array<{ title: string; time: string; type: string; plot: string; owner: string; priority: string; source: string }> = serverTasks.length
+    ? serverTasks.map((t) => ({ title: t.name, time: t.time || '08:30', type: t.typeLabel || t.type || '农事', plot: t.cropName ? `${t.cropName} · 农田` : '农田', owner: '我', priority: t.completed ? 'normal' : 'important', source: t.taskDate ? `计划于 ${t.taskDate}` : '农事计划' }))
+    : [
+      { title: '番茄棚补水', time: '08:30-09:00', type: '水肥管理', plot: '1号番茄棚 · A区', owner: '张大叔', priority: 'urgent', source: '环境湿度触发' },
+      { title: '复核土壤湿度传感器', time: '09:10-09:25', type: '环境巡检', plot: '1号番茄棚 · 传感器03', owner: '李师傅', priority: 'normal', source: '设备巡检计划' },
+      { title: '记录花期病虫害观察', time: '15:00-15:20', type: '植保记录', plot: '番茄花果期样本行', owner: '张大叔', priority: 'important', source: '作物阶段提醒' }
+    ];
   const tasks = [...baseTasks, ...extraTasks];
   const priorityLabel: Record<string, string> = { urgent: '紧急', important: '重点', normal: '常规' };
-  const submitTask = () => {
+  const submitTask = async () => {
     if (!newTask.title.trim()) return;
+    try {
+      await createFarmTask({ name: newTask.title.trim(), time: newTask.time, type: newTask.type, taskDate: `${todayYear}-${String(todayMonth).padStart(2, '0')}-${String(todayDay).padStart(2, '0')}` });
+    } catch {}
     setExtraTasks((prev) => [...prev, { ...newTask, title: newTask.title.trim(), plot: '临时农事安排', owner: '张大叔', priority: 'normal', source: '手动新增' }]);
     setNewTask({ title: '', time: '08:30', type: '巡检' });
     setShowAdd(false);
@@ -2329,7 +2380,7 @@ function FarmingMP() {
       <section className="farming-page-header">
         <div>
           <span>FARMING CALENDAR</span>
-          <h2>📅 农事日历</h2>
+          <h2><img src="/assets/icons/icon-calendar.png" alt="" className="fmy-inline-icon" /> 农事日历</h2>
           <p>按天气、环境和作物阶段安排今日农事</p>
           <small className="farmer-sample-note">体验样板 · 日历与任务为示例</small>
         </div>
@@ -2363,9 +2414,9 @@ function FarmingMP() {
       </section>
 
       <section className="farming-lunar-info-bar">
-        <span>🌤️ 晴 26°C</span>
-        <span>💧 湿度 68%</span>
-        <span>🌱 花果期</span>
+        <span><img src="/assets/icons/icon-cloudy.png" alt="" className="fmy-inline-icon" /> 晴 26°C</span>
+        <span><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" /> 湿度 68%</span>
+        <span><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-inline-icon" /> 花果期</span>
       </section>
 
       <section className="farming-progress-section">
@@ -2375,7 +2426,7 @@ function FarmingMP() {
       </section>
 
       <section className="farming-ai-section">
-        <div className="farming-section-title"><b>🤖 AI 农事建议</b><em>根据环境生成</em></div>
+        <div className="farming-section-title"><b><img src="/assets/icons/icon-ai.png" alt="" className="fmy-inline-icon" /> AI 农事建议</b><em>根据环境生成</em></div>
         {[
           ['提前开启番茄棚通风', '棚内温度将在 14:00 后升高，建议提前 30 分钟通风。'],
           ['A区土壤补水20分钟', '土壤湿度低于目标值 6%，建议低压滴灌。']
@@ -2399,7 +2450,7 @@ function FarmingMP() {
         </div>
         {tasks.map((task) => (
           <article key={`${task.title}-${task.time}`} className={`farming-task-card ${done.includes(task.title) ? 'done' : ''}`}>
-            <button className="task-check" onClick={() => toggle(task.title)}>{done.includes(task.title) ? '✓' : ''}</button>
+            <button className="task-check" onClick={() => toggle(task.title)}>{done.includes(task.title) ? <img src="/assets/icons/icon-check.png" alt="" className="fmy-grid-icon" /> : ''}</button>
             <div className="task-main">
               <div className="task-row-top">
                 <b>{task.title}</b>
@@ -2407,7 +2458,7 @@ function FarmingMP() {
               </div>
               <p>{task.plot}</p>
               <div className="task-meta-row">
-                <span>⏰ {task.time}</span>
+                <span><img src="/assets/icons/clock.png" alt="" className="fmy-inline-icon" /> {task.time}</span>
                 <span>{task.type}</span>
                 <span>负责人：{task.owner}</span>
               </div>
@@ -2435,17 +2486,113 @@ function FarmingMP() {
   );
 }
 
-function EnvironmentMP({ onPage }: { onPage: (page: FarmerPage) => void }) {
+function EnvironmentMP({ onPage, notify }: { onPage: (page: FarmerPage) => void; notify?: (message: string) => void }) {
   const [playing, setPlaying] = useState(false);
   const [chartTab, setChartTab] = useState<'temp' | 'humidity' | 'light'>('temp');
+  const [stationName, setStationName] = useState('1号番茄智能棚');
+  const [stationId, setStationId] = useState(0);
+  const [stations, setStations] = useState<EnvironmentStation[]>([]);
+  const [stationSheet, setStationSheet] = useState(false);
+  const [addingStation, setAddingStation] = useState(false);
+  const [stationDraft, setStationDraft] = useState({ name: '', location: '' });
+  const [savingStation, setSavingStation] = useState(false);
+  const [streams, setStreams] = useState<EnvironmentVideoStream | null>(null);
+  const [camError, setCamError] = useState(false);
+  const [overview, setOverview] = useState<EnvironmentOverview | null>(null);
+  const [sensors, setSensors] = useState<EnvironmentSensor[]>([]);
+  const [alerts, setAlerts] = useState<EnvironmentAlert[]>([]);
+  const [autoTasks, setAutoTasks] = useState<EnvironmentAutoTask[]>([]);
   const [devices, setDevices] = useState([
-    { id: 1, icon: '💧', name: '滴灌阀', on: true, state: '运行中', auto: true },
-    { id: 2, icon: '🌀', name: '通风机', on: true, state: '自动', auto: true },
-    { id: 3, icon: '💡', name: '补光灯', on: false, state: '已关闭', auto: false },
-    { id: 4, icon: '📹', name: '摄像头', on: true, state: '在线', auto: false },
-    { id: 5, icon: '🌫️', name: '雾化器', on: false, state: '已关闭', auto: true },
-    { id: 6, icon: '🪟', name: '卷膜机', on: true, state: '通风中', auto: true }
+    { id: 1, icon: '/assets/icons/icon-drip.png', name: '滴灌阀', on: true, state: '运行中', auto: true },
+    { id: 2, icon: '/assets/icons/icon-fan.png', name: '通风机', on: true, state: '自动', auto: true },
+    { id: 3, icon: '/assets/icons/icon-light.png', name: '补光灯', on: false, state: '已关闭', auto: false },
+    { id: 4, icon: '/assets/icons/icon-camera.png', name: '摄像头', on: true, state: '在线', auto: false },
+    { id: 5, icon: '/assets/icons/icon-fog.png', name: '雾化器', on: false, state: '已关闭', auto: true },
+    { id: 6, icon: '/assets/icons/icon-curtain.png', name: '卷膜机', on: true, state: '通风中', auto: true }
   ]);
+
+  const loadStation = async (sid: number) => {
+    const devs = await fetchEnvironmentDevices(sid);
+    if (devs.length) {
+      setDevices(devs.map((d) => ({ id: d.id, icon: d.icon || '/assets/icons/settings.png', name: d.name, on: d.on, state: d.runningState || (d.on ? '运行中' : '已关闭'), auto: d.auto })));
+    }
+    const [ov, se, al, at] = await Promise.all([fetchEnvironmentOverview(sid), fetchEnvironmentSensors(sid), fetchEnvironmentAlerts(sid), fetchEnvironmentAutoTasks(sid)]);
+    if (ov) setOverview(ov);
+    setSensors(se);
+    setAlerts(al);
+    setAutoTasks(at);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [list, vs] = await Promise.all([fetchEnvironmentStations(), fetchEnvironmentVideoStreams()]);
+      if (!alive) return;
+      setStations(list);
+      if (vs) setStreams(vs);
+      if (list.length) {
+        const sid = list[0].id;
+        setStationId(sid);
+        setStationName(list[0].name);
+        await loadStation(sid);
+      }
+    })().catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const switchStation = (st: EnvironmentStation) => {
+    setStationSheet(false);
+    if (st.id === stationId) return;
+    setStationId(st.id);
+    setStationName(st.name);
+    setOverview(null);
+    setSensors([]);
+    setAlerts([]);
+    setAutoTasks([]);
+    loadStation(st.id).catch(() => {});
+  };
+
+  const sensorStatusText = (type: string, text?: string) => {
+    if (text !== '正常') return text || '—';
+    if (type === 'pm25') return '良';
+    if (type === 'ph') return '适宜';
+    return text;
+  };
+
+  const submitNewStation = async () => {
+    const name = stationDraft.name.trim();
+    if (!name) { notify?.('请填写基地名称'); return; }
+    if (savingStation) return;
+    setSavingStation(true);
+    try {
+      const created = await createEnvironmentStation(name, stationDraft.location.trim());
+      const list = await fetchEnvironmentStations();
+      setStations(list);
+      setStationDraft({ name: '', location: '' });
+      setAddingStation(false);
+      setStationSheet(false);
+      if (created.id) {
+        setStationId(created.id);
+        setStationName(created.name);
+        setOverview(null);
+        setSensors([]);
+        setAlerts([]);
+        setAutoTasks([]);
+        loadStation(created.id).catch(() => {});
+      }
+      notify?.('大棚基地已添加');
+    } catch (error) {
+      notify?.(error instanceof Error ? error.message : '添加失败，请稍后重试');
+    } finally {
+      setSavingStation(false);
+    }
+  };
+
+  const toggleDevice = (id: number) => {
+    const device = devices.find((d) => d.id === id);
+    setDevices((prev) => prev.map((row) => row.id === id ? { ...row, on: !row.on, state: !row.on ? '运行中' : '已关闭' } : row));
+    if (device) toggleEnvironmentDevice(id, !device.on).catch(() => {});
+  };
   const chartRows = [
     { day: '周一', temp: 22, humidity: 69, light: 122 },
     { day: '周二', temp: 24, humidity: 73, light: 135 },
@@ -2461,56 +2608,66 @@ function EnvironmentMP({ onPage }: { onPage: (page: FarmerPage) => void }) {
       <section className="env-hero">
         <div>
           <span className="env-hero-kicker">IOT FARM MONITOR</span>
-          <h2>🌡️ 环境监测</h2>
+          <h2><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" /> 环境监测</h2>
           <p>视频、传感器、滴灌和自动化设备实时联动</p>
           <small className="farmer-sample-note">体验样板 · 读数与设备状态为示例</small>
         </div>
-        <button onClick={() => onPage('warningCenter')}>⚠️ 3</button>
+        <button onClick={() => onPage('warningCenter')}><img src="/assets/icons/icon-announce.png" alt="" className="fmy-inline-icon" /> 3</button>
       </section>
 
       <section className="env-station-bar">
-        <button className="env-station-info">
-          <span className="env-station-icon">🏡</span>
-          <b>1号番茄智能棚</b>
+        <button className="env-station-info" onClick={() => setStationSheet(true)}>
+          <span className="env-station-icon"><img src="/assets/icons/icon-location.png" alt="" className="fmy-grid-icon" /></span>
+          <b>{stationName}</b>
           <em><i />在线</em>
           <small>▼</small>
         </button>
-        <button className="env-device-entry" onClick={() => onPage('myDevice')}><span>📱</span><b>我的设备</b></button>
+        <button className="env-device-entry" onClick={() => onPage('myDevice')}><span><img src="/assets/icons/icon-phone.png" alt="" className="fmy-grid-icon" /></span><b>我的设备</b></button>
       </section>
 
       <section className="env-video-card" onClick={() => setPlaying(!playing)}>
         <img src="/assets/catalog/shouguang-greenhouse.jpg" alt="" />
+        {playing && streams?.streamUrl && !camError && (
+          <img
+            className="env-live-stream"
+            src={streams.streamUrl}
+            alt="实时画面"
+            onError={() => setCamError(true)}
+          />
+        )}
         <div className="env-live-tag"><i />LIVE</div>
-        <div className="env-video-overlay">
-          <button>{playing ? 'Ⅱ' : '▶'}</button>
-          <span>{playing ? '实时画面播放中' : '点击播放实时画面'}</span>
-        </div>
-        <footer><span>{playing ? '摄像头在线' : '摄像头待连接'}</span><b>📹 北棚主摄像头</b><em>⛶</em></footer>
+        {!(playing && streams?.streamUrl && !camError) && (
+          <div className="env-video-overlay">
+            <button>{playing ? 'Ⅱ' : '▶'}</button>
+            <span>{playing ? (camError ? '摄像头离线，请检查树莓派网络' : '正在连接摄像头…') : '点击播放实时画面'}</span>
+          </div>
+        )}
+        <footer><span>{playing && !camError && streams?.streamUrl ? '摄像头在线' : (camError ? '摄像头离线' : '摄像头待连接')}</span><b><img src="/assets/icons/icon-camera.png" alt="" className="fmy-inline-icon" /> 北棚主摄像头</b><em><img src="/assets/icons/icon-fullscreen.png" alt="" className="fmy-grid-icon" /></em></footer>
       </section>
 
       <section className="env-overview-section">
-        <div className="env-section-title"><b>🌡️ 环境总览</b><button>🔄 更新 10:32</button></div>
+        <div className="env-section-title"><b><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" /> 环境总览</b><button><img src="/assets/icons/icon-refresh.png" alt="" className="fmy-inline-icon" /> 更新 10:32</button></div>
         <div className="env-overview-grid">
           {[
-            { cls: 'temp', icon: '🌡️', value: '26°C', label: '棚内温度', trend: '↑ 1.2°C 较昨日', status: '正常' },
-            { cls: 'ph', icon: '🧪', value: '6.8', label: '土壤酸碱度', trend: '稳定 · 适宜作物生长', status: '✓ 适宜' },
-            { cls: 'humi', icon: '💧', value: '71%', label: '空气湿度', trend: '↓ 3% 较昨日', status: '良好' },
-            { cls: 'light', icon: '☀️', value: '18.2k', label: '光照强度', trend: '↑ 光照充足', status: '✓ 充足' }
+            { cls: 'temp', icon: '/assets/icons/icon-humidity.png', label: '棚内温度', m: overview?.temp },
+            { cls: 'ph', icon: '/assets/icons/icon-chart.png', label: '土壤酸碱度', m: overview?.ph },
+            { cls: 'humi', icon: '/assets/icons/icon-humidity.png', label: '空气湿度', m: overview?.humidity },
+            { cls: 'light', icon: '/assets/icons/icon-sun.png', label: '光照强度', m: overview?.light }
           ].map((item) => (
             <article className={`env-overview-card ${item.cls}`} key={item.label}>
-              <div>{item.icon}</div><strong>{item.value}</strong><span>{item.label}</span><p>{item.trend}</p><em>{item.status}</em>
+              <div><img src={item.icon} alt="" className="fmy-grid-icon" /></div><strong>{item.m?.value || '--'}</strong><span>{item.label}</span><p>{item.m?.trend || '—'}</p><em>{item.m?.status || '—'}</em>
             </article>
           ))}
         </div>
       </section>
 
       <section className="env-drip-card" onClick={() => onPage('myDevice')}>
-        <div><span>💧</span><p><b>智能滴灌系统</b><small>● 运行中 · 今日用水 12.5L · A区补水 20 分钟</small></p></div><em>›</em>
+        <div><span><img src="/assets/icons/icon-drip.png" alt="" className="fmy-grid-icon" /></span><p><b>智能滴灌系统</b><small>● 运行中 · 今日用水 12.5L · A区补水 20 分钟</small></p></div><em>›</em>
       </section>
 
       <section className="env-chart-section">
         <div className="env-chart-head">
-          <b>📈 数据趋势</b>
+          <b><img src="/assets/icons/icon-chart.png" alt="" className="fmy-inline-icon" /> 数据趋势</b>
           <div>
             {([['temp', '温度'], ['humidity', '湿度'], ['light', '光照']] as const).map(([id, label]) => <button key={id} className={chartTab === id ? 'active' : ''} onClick={() => setChartTab(id)}>{label}</button>)}
           </div>
@@ -2527,12 +2684,12 @@ function EnvironmentMP({ onPage }: { onPage: (page: FarmerPage) => void }) {
       </section>
 
       <section className="env-device-section">
-        <div className="env-section-title"><b>⚙️ 设备控制中心</b><button onClick={() => onPage('myDevice')}>全部设置 ›</button></div>
+        <div className="env-section-title"><b><img src="/assets/icons/settings.png" alt="" className="fmy-inline-icon" /> 设备控制中心</b><button onClick={() => onPage('myDevice')}>全部设置 ›</button></div>
         <div className="env-device-grid">
           {devices.map((device) => (
-            <button key={device.id} className={device.on ? 'on' : ''} onClick={() => setDevices((prev) => prev.map((row) => row.id === device.id ? { ...row, on: !row.on } : row))}>
+            <button key={device.id} className={device.on ? 'on' : ''} onClick={() => toggleDevice(device.id)}>
               {device.auto && <small>自动</small>}
-              <span>{device.icon}</span>
+              <span><img src={device.icon} alt="" className="fmy-grid-icon" /></span>
               <b>{device.name}</b>
               <em>{device.on ? device.state : '已关闭'}</em>
             </button>
@@ -2541,42 +2698,62 @@ function EnvironmentMP({ onPage }: { onPage: (page: FarmerPage) => void }) {
       </section>
 
       <section className="env-alert-section">
-        <div className="env-section-title"><b>⚠️ 异常信息</b><button onClick={() => onPage('warningCenter')}>3 条 ›</button></div>
+        <div className="env-section-title"><b><img src="/assets/icons/icon-announce.png" alt="" className="fmy-inline-icon" /> 异常信息</b><button onClick={() => onPage('warningCenter')}>3 条 ›</button></div>
         <div className="env-alert-scroll">
-          {[
-            { level: 'red', icon: '🔥', title: '棚内温度过高', desc: '当前 26°C，超过安全阈值', time: '10分钟前 · 温度传感器' },
-            { level: 'orange', icon: '💧', title: '土壤湿度偏低', desc: 'A区湿度 15.5%，建议补水', time: '18分钟前 · 土壤传感器' },
-            { level: 'yellow', icon: '📹', title: '摄像头离线', desc: '南区摄像头 2 小时未回传', time: '2小时前 · 监控设备' }
-          ].map((item) => <article className={item.level} key={item.title}><div><span>{item.icon}</span><b>{item.title}</b><em>{item.level === 'red' ? '紧急' : item.level === 'orange' ? '重要' : '提醒'}</em></div><p>{item.desc}</p><small>{item.time}</small></article>)}
+          {alerts.length === 0 && <div className="tech-empty">暂无异常信息</div>}
+          {alerts.map((a) => <article className={a.level} key={a.id}><div><span><img src={a.icon} alt="" className="fmy-grid-icon" /></span><b>{a.title}</b><em>{a.levelText}</em></div><p>{a.desc}</p><small>{a.time} · {a.source}</small></article>)}
         </div>
       </section>
 
       <section className="env-sensor-section">
-        <div className="env-section-title"><b>🔬 传感器详细数据</b></div>
+        <div className="env-section-title"><b><img src="/assets/icons/icon-chart.png" alt="" className="fmy-inline-icon" /> 传感器详细数据</b></div>
         <div className="env-sensor-grid">
-          {[
-            ['sc-temp', '土壤温度', '22.4°C', '✓ 正常'],
-            ['sc-humi-low', '土壤湿度', '15.5💧', '↓ 偏低'],
-            ['sc-air-temp', '环境温度', '26.0°C', '✓ 正常'],
-            ['sc-air-humi', '环境湿度', '71%', '✓ 正常'],
-            ['sc-co2', '二氧化碳浓度', '468ppm', '✓ 正常'],
-            ['sc-light', '光照强度', '18.2kLux', '✓ 正常'],
-            ['sc-nh3', '氨气浓度', '0.02ppm', '😊 正常'],
-            ['sc-pm25', 'PM2.5', '18ug/m³', '😐 良好'],
-            ['sc-ec', '土壤电导率', '1.2mS/cm', '✓ 正常'],
-            ['sc-ph', '酸碱值pH', '6.8', '✓ 适宜']
-          ].map(([cls, label, value, hint]) => <article className={cls} key={label}><span>{label}</span><b>{value}</b><em>{hint}</em></article>)}
+          {sensors.length === 0 && <div className="tech-empty">暂无传感器数据</div>}
+          {sensors.map((s) => (
+            <article key={s.id}>
+              <span>{s.name}</span>
+              <b>{Number(s.value || 0).toLocaleString('en-US')}{s.unit}</b>
+              <em>{sensorStatusText(s.type, s.statusText)}</em>
+            </article>
+          ))}
         </div>
       </section>
 
       <section className="env-auto-section">
-        <div className="env-section-title"><b>🤖 自动化任务</b></div>
-        {[
-          ['高温自动通风', '当棚内温度超过 28°C 自动开启通风机', true],
-          ['低湿度自动滴灌', '土壤湿度低于 18% 自动补水 20 分钟', true],
-          ['夜间补光策略', '18:30 后光照不足时自动开启补光灯', false]
-        ].map(([name, desc, on]) => <article key={String(name)}><div><b>{name}</b><p>{desc}</p></div><span className={on ? 'on' : ''}><i /></span></article>)}
+        <div className="env-section-title"><b><img src="/assets/icons/icon-ai.png" alt="" className="fmy-inline-icon" /> 自动化任务</b></div>
+        {autoTasks.length === 0 && <div className="tech-empty">暂无自动化任务</div>}
+        {autoTasks.map((t) => <article key={t.id}><div><b>{t.name}</b><p>{t.description}</p></div><span className={t.enabled ? 'on' : ''}><i /></span></article>)}
       </section>
+
+      {stationSheet && createPortal(
+        <div className="st-sheet-mask" onClick={() => { setStationSheet(false); setAddingStation(false); }}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>{addingStation ? '添加大棚基地' : '选择智能棚'}</b><button onClick={() => { setStationSheet(false); setAddingStation(false); }}>×</button></div>
+            {addingStation ? (
+              <>
+                <div className="st-fb-types" style={{ flexDirection: 'column' }}>
+                  <input className="st-fb-contact" placeholder="基地名称（如：2号番茄智能棚）" value={stationDraft.name} onChange={(e) => setStationDraft({ ...stationDraft, name: e.target.value })} maxLength={64} />
+                  <input className="st-fb-contact" placeholder="位置（选填，如：东区 3 号棚）" value={stationDraft.location} onChange={(e) => setStationDraft({ ...stationDraft, location: e.target.value })} maxLength={128} />
+                  <button className="st-fb-submit" disabled={savingStation} onClick={submitNewStation}>{savingStation ? '添加中…' : '确认添加'}</button>
+                  <button className="st-fb-cancel" onClick={() => setAddingStation(false)}>返回列表</button>
+                </div>
+                <small className="pay-tip">添加后基地初始为离线，绑定传感器设备后自动上线</small>
+              </>
+            ) : (
+              <>
+                {stations.map((st) => (
+                  <button key={st.id} className={`st-sheet-row ${st.id === stationId ? 'active' : ''}`} onClick={() => switchStation(st)}>
+                    <span>{st.name}</span>
+                    <em>{st.statusText || (st.isOnline ? '在线' : '离线')}</em>
+                  </button>
+                ))}
+                <button className="st-sheet-row st-add-row" onClick={() => setAddingStation(true)}>＋ 添加大棚基地</button>
+              </>
+            )}
+          </section>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -2585,24 +2762,47 @@ function CommunityMP() {
   const [activeTab, setActiveTab] = useState<'hot' | 'latest'>('hot');
   const [content, setContent] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [list, setList] = useState(farmerCommunityPosts);
-  const publish = () => {
+  const [list, setList] = useState<Array<{ id: number; userName: string; levelText: string; location: string; time: string; content: string; hasVoice: boolean; voiceDuration: string; likes: number; comments: number; views: number; liked: boolean }>>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCommunityPosts().then((posts) => {
+      if (!alive) return;
+      if (posts.length) {
+        setList(posts.map((p) => ({ id: p.id, userName: p.userName, levelText: p.levelText, location: p.location, time: p.time, content: p.content, hasVoice: false, voiceDuration: '', likes: p.likes, comments: p.comments, views: p.views, liked: p.liked })));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const publish = async () => {
     if (!content.trim()) return;
-    setList((prev) => [{ id: Date.now(), userName: '我', levelText: '🥇黄金', location: '云南·昆明', time: '刚刚', content, hasVoice: false, voiceDuration: '', likes: 0, comments: 0, views: 0, liked: false, showComments: false, commentList: [] }, ...prev]);
-    setContent('');
+    const text = content.trim();
+    try {
+      await createCommunityPost(text);
+      setContent('');
+      // 刷新
+      fetchCommunityPosts().then((posts) => {
+        setList(posts.map((p) => ({ id: p.id, userName: p.userName, levelText: p.levelText, location: p.location, time: p.time, content: p.content, hasVoice: false, voiceDuration: '', likes: p.likes, comments: p.comments, views: p.views, liked: p.liked })));
+      }).catch(() => {});
+    } catch {
+      // 本地兜底：仍显示刚发的帖子
+      setList((prev) => [{ id: Date.now(), userName: '我', levelText: '🥇黄金', location: '云南·昆明', time: '刚刚', content: text, hasVoice: false, voiceDuration: '', likes: 0, comments: 0, views: 0, liked: false }, ...prev]);
+      setContent('');
+    }
   };
   return (
     <div className="farmer-mp community-mp">
       <header className="community-nav"><b>农友社区</b></header>
-      <div className="community-tabs"><button className={activeTab === 'hot' ? 'active' : ''} onClick={() => setActiveTab('hot')}>🔥 热门</button><button className={activeTab === 'latest' ? 'active' : ''} onClick={() => setActiveTab('latest')}>🕐 最新</button></div>
+      <div className="community-tabs"><button className={activeTab === 'hot' ? 'active' : ''} onClick={() => setActiveTab('hot')}><img src="/assets/icons/icon-flame.png" alt="" className="fmy-inline-icon" /> 热门</button><button className={activeTab === 'latest' ? 'active' : ''} onClick={() => setActiveTab('latest')}><img src="/assets/icons/clock.png" alt="" className="fmy-inline-icon" /> 最新</button></div>
       <section className="post-input-area">
         <input value={content} onChange={(event) => setContent(event.target.value)} placeholder="分享你的种植经验..." />
-        <button className={isRecording ? 'recording' : ''} onMouseDown={() => setIsRecording(true)} onMouseUp={() => { setIsRecording(false); setContent('今天天气不错，番茄长势很好！'); }}>🎙️</button>
+        <button className={isRecording ? 'recording' : ''} onMouseDown={() => setIsRecording(true)} onMouseUp={() => { setIsRecording(false); setContent('今天天气不错，番茄长势很好！'); }}><img src="/assets/icons/icon-mic.png" alt="" className="fmy-grid-icon" /></button>
         <button onClick={publish}>发送</button>
       </section>
-      {isRecording && <div className="recording-toast">🔴 正在录音，松开发送...</div>}
+      {isRecording && <div className="recording-toast"><img src="/assets/icons/icon-play.png" alt="" className="fmy-inline-icon" /> 正在录音，松开发送...</div>}
       <section className="post-list">
-        {list.map((post) => <article className="post-card" key={post.id}><div className="post-user-row"><div>{post.userName.slice(0, 1)}</div><p><b>{post.userName}<em>{post.levelText}</em></b><span>{post.location} · {post.time}</span></p></div><p>{post.content}</p>{post.hasVoice && <button className="voice-strip">▶ ▬▬▬▬▬ {post.voiceDuration}"</button>}<footer><button>🤍 {post.likes}</button><button>💬 {post.comments}</button><span>👁️ {post.views}</span></footer></article>)}
+        {list.map((post) => <article className="post-card" key={post.id}><div className="post-user-row"><div>{post.userName.slice(0, 1)}</div><p><b>{post.userName}<em>{post.levelText}</em></b><span>{post.location} · {post.time}</span></p></div><p>{post.content}</p>{post.hasVoice && <button className="voice-strip">▶ ▬▬▬▬▬ {post.voiceDuration}"</button>}<footer><button><img src="/assets/icons/icon-like.png" alt="" className="fmy-inline-icon" /> {post.likes}</button><button><img src="/assets/icons/icon-chat.png" alt="" className="fmy-inline-icon" /> {post.comments}</button><span><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> {post.views}</span></footer></article>)}
       </section>
     </div>
   );
@@ -2620,13 +2820,13 @@ function FarmerHome({ onTab, onPage }: { onTab: (tab: FarmerTab) => void; onPage
     <div className="farmer-home-replica">
       <section className="fh-header">
         <div className="fh-location-weather">
-          <button onClick={() => onPage('locationMap')}>📍昆明</button>
-          <button onClick={() => onPage('weatherDetail')}>☀️晴 26°C</button>
+          <button onClick={() => onPage('locationMap')}><img src="/assets/icons/icon-location.png" alt="" className="fmy-inline-icon" />昆明</button>
+          <button onClick={() => onPage('weatherDetail')}><img src="/assets/icons/icon-sun.png" alt="" className="fmy-inline-icon" />晴 26°C</button>
         </div>
         <div className="fh-greeting-row">
           <h2>下午好，农友</h2>
           <button className={noticeRead ? 'read' : ''} onClick={() => setNoticeRead(true)}>
-            🔔{noticeRead ? '已读' : ''}
+            <img src="/assets/icons/icon-bell.png" alt="" className="fmy-grid-icon" />{noticeRead ? '已读' : ''}
           </button>
         </div>
       </section>
@@ -2634,7 +2834,7 @@ function FarmerHome({ onTab, onPage }: { onTab: (tab: FarmerTab) => void; onPage
       <section className="fh-assistant-card">
         <div className="fh-assistant-head">
           <div className="fh-assistant-title">
-            <span>🌾</span>
+            <span><img src="/assets/icons/icon-rice.png" alt="" className="fmy-grid-icon" /></span>
             <div>
               <b>农事助手</b>
               <small>今日 {todayMonthDay} · 下午好</small>
@@ -2644,37 +2844,37 @@ function FarmerHome({ onTab, onPage }: { onTab: (tab: FarmerTab) => void; onPage
         </div>
         <div className="fh-progress-row">
           <div className="fh-progress"><i style={{ width: '20%' }} /></div>
-          <div><span>✓ 已完成1</span><span>5项</span></div>
+          <div><span><img src="/assets/icons/icon-check.png" alt="" className="fmy-inline-icon" /> 已完成1</span><span>5项</span></div>
         </div>
         <div className="fh-fa-grid">
-          <button onClick={() => onTab('farming')}><span>📅</span><b>农事日历</b><small>5项今日</small></button>
-          <button onClick={() => onPage('myCrops')}><span>🌾</span><b>种植档案</b><small className="ok">4种在管</small></button>
-          <button onClick={() => onPage('adoptionCenter')}><span>💰</span><b>认养订单</b><small>6单在管</small></button>
-          <button onClick={() => onTab('environment')}><span>🌡️</span><b>环境监测</b><small>实时监控</small></button>
+          <button onClick={() => onTab('farming')}><span><img src="/assets/icons/icon-calendar.png" alt="" className="fmy-grid-icon" /></span><b>农事日历</b><small>5项今日</small></button>
+          <button onClick={() => onPage('myCrops')}><span><img src="/assets/icons/icon-rice.png" alt="" className="fmy-grid-icon" /></span><b>种植档案</b><small className="ok">4种在管</small></button>
+          <button onClick={() => onPage('adoptionCenter')}><span><img src="/assets/icons/icon-chart.png" alt="" className="fmy-grid-icon" /></span><b>认养订单</b><small>6单在管</small></button>
+          <button onClick={() => onTab('environment')}><span><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-grid-icon" /></span><b>环境监测</b><small>实时监控</small></button>
         </div>
         <div className="fh-weather-strip">
-          <span>☀️</span><b>26°C</b><small>晴朗 · 适宜户外作业</small><i /> <small>💧58%</small><i /><small>🌬️3级风</small>
+          <span><img src="/assets/icons/icon-sun.png" alt="" className="fmy-grid-icon" /></span><b>26°C</b><small>晴朗 · 适宜户外作业</small><i /> <small><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" />58%</small><i /><small><img src="/assets/icons/icon-fog.png" alt="" className="fmy-inline-icon" />3级风</small>
         </div>
-        <div className="fh-ai-tip"><span>🤖</span><p>今日有小雨，建议室内整理农具，雨停后检查大棚排水</p></div>
+        <div className="fh-ai-tip"><span><img src="/assets/icons/icon-ai.png" alt="" className="fmy-grid-icon" /></span><p>今日有小雨，建议室内整理农具，雨停后检查大棚排水</p></div>
       </section>
 
       <section className="fh-func-grid">
-        <button onClick={() => onPage('voiceAssistant')}><span>📷</span><b>拍照识别</b></button>
-        <button onClick={() => onPage('myCrops')}><span>🌱</span><b>我的作物</b></button>
-        <button onClick={() => onPage('voiceAssistant')}><span>🎤</span><b>语音助手</b></button>
-        <button onClick={() => onPage('warningCenter')}><span>⚠️</span><b>最新预警</b></button>
-        <button onClick={() => onPage('techSupport')}><span>🔧</span><b>技术支持</b></button>
-        <button onClick={() => onPage('weatherDetail')}><span>🌤️</span><b>天气详情</b></button>
+        <button onClick={() => onPage('voiceAssistant')}><span><img src="/assets/icons/icon-camera.png" alt="" className="fmy-grid-icon" /></span><b>拍照识别</b></button>
+        <button onClick={() => onPage('myCrops')}><span><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-grid-icon" /></span><b>我的作物</b></button>
+        <button onClick={() => onPage('voiceAssistant')}><span><img src="/assets/icons/icon-mic.png" alt="" className="fmy-grid-icon" /></span><b>语音助手</b></button>
+        <button onClick={() => onPage('warningCenter')}><span><img src="/assets/icons/icon-announce.png" alt="" className="fmy-grid-icon" /></span><b>最新预警</b></button>
+        <button onClick={() => onPage('techSupport')}><span><img src="/assets/icons/icon-expert.png" alt="" className="fmy-grid-icon" /></span><b>技术支持</b></button>
+        <button onClick={() => onPage('weatherDetail')}><span><img src="/assets/icons/icon-cloudy.png" alt="" className="fmy-grid-icon" /></span><b>天气详情</b></button>
       </section>
 
       <section className="fh-ai-card">
-        <div><b>✨ AI智能决策</b><em>最新</em></div>
+        <div><b><img src="/assets/icons/icon-ai.png" alt="" className="fmy-inline-icon" /> AI智能决策</b><em>最新</em></div>
         <p>根据近期气象数据，建议您在3天内对番茄进行一次叶面施肥，注意保持土壤湿度在65%左右。预计本周后期有阵雨，请提前做好排水准备。</p>
-        <footer><span>智能分析</span><span>数据驱动</span><button onClick={() => onPage('voiceAssistant')}>AI对话 💬</button></footer>
+        <footer><span>智能分析</span><span>数据驱动</span><button onClick={() => onPage('voiceAssistant')}>AI对话 <img src="/assets/icons/icon-chat.png" alt="" className="fmy-inline-icon" /></button></footer>
       </section>
 
       <section className="fh-reminders">
-        <div className="fh-section-head"><b>📋 农事提醒</b><button onClick={() => onTab('farming')}>查看全部 ›</button></div>
+        <div className="fh-section-head"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 农事提醒</b><button onClick={() => onTab('farming')}>查看全部 ›</button></div>
         {remindersReplica.map((item) => (
           <article className={item.status} key={item.name}>
             <i />
@@ -2797,7 +2997,7 @@ function FarmerShop({ onPage, notify }: { onPage: (page: FarmerPage) => void; no
 
             {sheet === 'upload' && (
               <div className="fsp-upload">
-                <button className="fsp-photo">📷 上传商品照片</button>
+                <button className="fsp-photo"><img src="/assets/icons/icon-camera.png" alt="" className="fmy-inline-icon" /> 上传商品照片</button>
                 <label>商品名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="例如：高原有机番茄" /></label>
                 <label>销售价格<input value={draft.price} onChange={(event) => setDraft({ ...draft, price: event.target.value })} placeholder="例如：38" inputMode="decimal" /></label>
                 <label>商品说明<textarea value={draft.desc} onChange={(event) => setDraft({ ...draft, desc: event.target.value })} placeholder="产地、规格、采摘时间、配送说明" /></label>
@@ -2972,19 +3172,19 @@ function Community() {
         <span />
       </header>
       <div className="fc-tab-bar">
-        <button className={activeTab === 'hot' ? 'active' : ''} onClick={() => setActiveTab('hot')}>🔥 热门</button>
-        <button className={activeTab === 'latest' ? 'active' : ''} onClick={() => setActiveTab('latest')}>🕐 最新</button>
+        <button className={activeTab === 'hot' ? 'active' : ''} onClick={() => setActiveTab('hot')}><img src="/assets/icons/icon-flame.png" alt="" className="fmy-inline-icon" /> 热门</button>
+        <button className={activeTab === 'latest' ? 'active' : ''} onClick={() => setActiveTab('latest')}><img src="/assets/icons/clock.png" alt="" className="fmy-inline-icon" /> 最新</button>
       </div>
       <section className="fc-post-input-area">
         <div className="fc-post-input-box">
           <input value={content} onChange={(event) => setContent(event.target.value)} placeholder="分享你的种植经验..." />
           <button className={isRecording ? 'recording' : ''} onMouseDown={() => setIsRecording(true)} onMouseUp={stopRecord} onClick={() => !isRecording && setContent((prev) => `${prev}请教大家一下，大棚湿度太高怎么办？`)}>
-            {isRecording ? '🔴' : '🎙️'}
+            {isRecording ? <img src="/assets/icons/icon-play.png" alt="" className="fmy-grid-icon" /> : <img src="/assets/icons/icon-mic.png" alt="" className="fmy-grid-icon" />}
           </button>
         </div>
         <button className="fc-send-btn" onClick={publish}>发送</button>
       </section>
-      {isRecording && <div className="fc-recording-toast">🔴 正在录音，松开发送...</div>}
+      {isRecording && <div className="fc-recording-toast"><img src="/assets/icons/icon-play.png" alt="" className="fmy-inline-icon" /> 正在录音，松开发送...</div>}
       <div className="fc-post-list">
         {communityList.map((post) => (
           <article className="fc-post-card" key={post.id}>
@@ -3002,9 +3202,9 @@ function Community() {
               </button>
             )}
             <div className="fc-post-actions">
-              <button className={post.liked ? 'liked' : ''} onClick={() => setCommunityList((prev) => prev.map((row) => row.id === post.id ? { ...row, liked: !row.liked, likes: row.liked ? row.likes - 1 : row.likes + 1 } : row))}>{post.liked ? '❤️' : '🤍'} {post.likes}</button>
-              <button onClick={() => setCommunityList((prev) => prev.map((row) => row.id === post.id ? { ...row, showComments: !row.showComments } : row))}>💬 {post.comments}</button>
-              <span>👁️ {post.views}</span>
+              <button className={post.liked ? 'liked' : ''} onClick={() => setCommunityList((prev) => prev.map((row) => row.id === post.id ? { ...row, liked: !row.liked, likes: row.liked ? row.likes - 1 : row.likes + 1 } : row))}><img src="/assets/icons/icon-like.png" alt="" className="fmy-inline-icon" /> {post.likes}</button>
+              <button onClick={() => setCommunityList((prev) => prev.map((row) => row.id === post.id ? { ...row, showComments: !row.showComments } : row))}><img src="/assets/icons/icon-chat.png" alt="" className="fmy-inline-icon" /> {post.comments}</button>
+              <span><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> {post.views}</span>
             </div>
             {post.showComments && post.commentList.length > 0 && (
               <div className="fc-comments">
@@ -3025,7 +3225,12 @@ function Profile({
   onOpenFarmerPage,
   onLogin,
   loggedIn = false,
-  safeProduct
+  session,
+  safeProduct,
+  orders,
+  onEditProfile,
+  recommendProducts,
+  onProduct
 }: {
   role: Role;
   onSwitch: () => void;
@@ -3033,56 +3238,142 @@ function Profile({
   onOpenFarmerPage?: (page: FarmerPage) => void;
   onLogin?: () => void;
   loggedIn?: boolean;
+  session?: SessionUser | null;
   safeProduct: (idx: number) => Product;
+  orders?: OrderRecord[];
+  onEditProfile?: () => void;
+  recommendProducts?: Product[];
+  onProduct?: (item: Product) => void;
 }) {
   if (role === 'consumer') {
     const open = (page: ConsumerPage) => onOpenConsumerPage?.(page);
+    const count = (s: string) => (orders || []).filter((o) => o.status === s).length;
+    const goEdit = () => { if (loggedIn) onEditProfile?.(); else onLogin?.(); };
+    const isFarmer = Boolean(session?.roles?.includes('farmer'));
+    const services: Array<[string, string, () => void]> = [
+      ['/assets/icons/adopt.png', '我的认养', () => open('adoptDetail')],
+      ['/assets/icons/chat.png', '在线客服', () => open('service')],
+      ['/assets/icons/pin.png', '收货地址', () => open('address')],
+      ['/assets/icons/heart.png', '我的收藏', () => open('favorites')],
+      ['/assets/icons/message.png', '我的消息', () => open('messages')],
+      ['/assets/icons/bag.png', '购物车', () => open('cart')],
+      ['/assets/icons/settings.png', '账户设置', () => open('settings')],
+      ...(isFarmer ? [['/assets/icons/truck.png', '农户订单', onSwitch] as [string, string, () => void]] : []),
+    ];
     return (
-      <div className="mp-profile-page">
-        <header className="mp-profile-header">
-          <button className="mp-profile-avatar" onClick={() => open('settings')}><img src="/assets/logo.png" alt=""/></button>
-          <div><b>小满合用户</b><span>{loggedIn ? '账户已登录' : '登录后管理订单与个人资料'}</span></div>
-          {loggedIn ? <button className="mp-profile-login" onClick={() => open('settings')}>设置</button> : <button className="mp-profile-login" onClick={onLogin}>登录 / 注册</button>}
-        </header>
-        <section className="mp-profile-panel">
-          <div className="mp-profile-title"><b>我的订单</b><button onClick={() => open('orders')}>全部订单 ›</button></div>
-          <div className="mp-profile-order-links">
-            {[[ClipboardCheck,'待付款'],[PackageSearch,'待发货'],[Truck,'待收货'],[MessageCircle,'评价/售后']].map(([Icon,label]) => {
-              const ItemIcon = Icon as typeof ClipboardCheck;
-              return <button key={label as string} onClick={() => open('orders')}><ItemIcon size={23}/><span>{label as string}</span></button>;
-            })}
+      <div className="account-page">
+        <header className="account-hero">
+          <div className="account-top">
+            <button onClick={() => open('member')} aria-label="会员中心"><img src="/assets/icons/member.png" alt="" /></button>
+            <button onClick={() => open('messages')} aria-label="我的消息"><img src="/assets/icons/message.png" alt="" /></button>
+            <button onClick={() => open('footprints')} aria-label="浏览足迹"><img src="/assets/icons/footprint.png" alt="" /></button>
           </div>
-          <p className="mp-profile-hint">订单信息将在登录并接入服务后显示</p>
-        </section>
-        <section className="mp-profile-panel">
-          <div className="mp-profile-title"><b>常用功能</b></div>
-          {[
-            ['购物车','cart'],['我的认养','adoptDetail'],['地址管理','address'],['消息通知','messages'],['服务与帮助','service'],['设置','settings']
-          ].map(([label,page])=><button className="mp-profile-row" key={page} onClick={()=>open(page as ConsumerPage)}><span>{label}</span><ChevronRight size={17}/></button>)}
-        </section>
-        <button className="mp-profile-switch" onClick={onSwitch}>切换身份 <ChevronRight size={17}/></button>
+          <div className="account-profile" onClick={goEdit}>
+            <div className="account-avatar">{session?.avatar ? <img src={session.avatar} alt="头像" /> : <img src="/assets/brand-logo.png" alt="默认头像" />}</div>
+            <div className="account-user">
+              <b className="account-name">{loggedIn ? (session?.nickname || '耘露用户') : '欢迎来到耘露'}</b>
+              <span className="account-desc">{loggedIn ? (session?.city ? `📍 ${session.city}` : '我的新鲜生活') : '登录查看订单与收货信息'}</span>
+            </div>
+            {loggedIn
+              ? <em className="account-chev">›</em>
+              : <button className="account-login" onClick={(e) => { e.stopPropagation(); onLogin?.(); }}>登录</button>}
+          </div>
+        </header>
+        <div className="account-content">
+          <section className="account-card account-order-grid">
+            {([
+              ['/assets/icons/wallet.png', '待付款', 'pending', () => open('orders')],
+              ['/assets/icons/package.png', '待发货', 'paid', () => open('orders')],
+              ['/assets/icons/truck.png', '待收货', 'shipped', () => open('orders')],
+              ['/assets/icons/return.png', '客服售后', '', () => open('service')],
+              ['/assets/icons/orders.png', '全部订单', '', () => open('orders')],
+            ] as Array<[string, string, string, () => void]>).map(([icon, label, status, action]) => (
+              <button key={label} className="account-shortcut" onClick={action}>
+                <span className="account-shortcut-icon"><img src={icon} alt="" /></span>
+                <span>{label}</span>
+                {status && loggedIn && <i className="account-badge">{count(status)}</i>}
+              </button>
+            ))}
+          </section>
+          <section className="account-card account-services">
+            <div className="account-services-title">我的服务</div>
+            <div className="account-services-grid">
+              {services.map(([icon, label, action]) => (
+                <button key={label} className="account-service" onClick={action}>
+                  <span className="account-service-icon"><img src={icon} alt="" /></span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+          {(recommendProducts || []).length > 0 && (
+            <section className="account-recommend">
+              <div className="account-recommend-head">
+                <b>为 · 你 · 推 · 荐</b>
+                <span>GUESS YOU WILL LIKE</span>
+              </div>
+              <div className="account-recommend-grid">
+                {(recommendProducts || []).slice(0, 6).map((item) => (
+                  <button key={item.id} className="account-recommend-card" onClick={() => onProduct?.(item)}>
+                    <span className="account-recommend-photo"><img src={item.image || item.coverImage} alt="" /></span>
+                    <b>{item.name}</b>
+                    <div className="account-recommend-meta">
+                      <strong><i>¥</i>{item.price}</strong>
+                      <small>{item.origin || item.unit || ''}</small>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <p className="account-recommend-note">本地农货资料 · 购买服务以商品详情为准</p>
+            </section>
+          )}
+          <button className="mp-profile-switch" onClick={onSwitch}>切换身份 <ChevronRight size={17} /></button>
+        </div>
       </div>
     );
   }
 
   const [quickDevices, setQuickDevices] = useState([
-    { id: 1, icon: '🌀', name: '通风扇', on: true },
-    { id: 2, icon: '🪟', name: '卷帘', on: true },
-    { id: 3, icon: '💧', name: '滴灌系统', on: true },
-    { id: 4, icon: '💡', name: '补光灯', on: false }
+    { id: 1, icon: '/assets/icons/icon-fan.png', name: '通风扇', on: true },
+    { id: 2, icon: '/assets/icons/icon-curtain.png', name: '卷帘', on: true },
+    { id: 3, icon: '/assets/icons/icon-drip.png', name: '滴灌系统', on: true },
+    { id: 4, icon: '/assets/icons/icon-light.png', name: '补光灯', on: false }
   ]);
   const [mineModal, setMineModal] = useState<'addCrop' | 'cropDetail' | 'historyDetail' | 'allCrops' | 'allHistory' | null>(null);
   const [selectedCrop, setSelectedCrop] = useState(farmerArchives[0]);
   const [selectedHistory, setSelectedHistory] = useState(farmerHistory[0]);
   const [cropDraft, setCropDraft] = useState({ name: '', area: '', date: '' });
   const [extraCrops, setExtraCrops] = useState<typeof farmerArchives>([]);
-  const cropList = [...farmerArchives, ...extraCrops];
+  const [serverCrops, setServerCrops] = useState<typeof farmerArchives>([]);
+  const cropList = serverCrops.length ? serverCrops : [...farmerArchives, ...extraCrops];
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerCrops().then((crops) => {
+      if (!alive || !crops.length) return;
+      const mapped = crops.map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon: c.icon,
+        area: c.area,
+        plantDays: c.daysToHarvest,
+        status: c.statusText,
+        yield: '待评估',
+        photo: '',
+        note: '',
+      }));
+      setServerCrops(mapped);
+      setSelectedCrop(mapped[0]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const addCrop = () => {
     if (!cropDraft.name.trim() || !cropDraft.area.trim()) return;
     setExtraCrops((prev) => [...prev, {
       id: Date.now(),
       name: cropDraft.name.trim(),
-      icon: '🌱',
+      icon: '/assets/icons/icon-leaf.png',
       area: `${cropDraft.area}亩`,
       plantDays: cropDraft.date ? Math.max(0, Math.ceil((Date.now() - new Date(cropDraft.date).getTime()) / 86400000)) : 0,
       status: '幼苗期',
@@ -3096,18 +3387,34 @@ function Profile({
 
   return (
     <div className="farmer-my-page farmer-my-replica">
-      <div className="farmer-sub-sample-note">体验样板 · 账号、认证和统计数据为示例</div>
       <section className="fmy-profile-header">
-        <div className="fmy-avatar-area">
-          <div className="fmy-avatar">👨‍🌾</div>
-          <span>💎 钻石农户</span>
-        </div>
-        <div className="fmy-user-info">
-          <h2>张大叔</h2>
-          <p>ID: FM20240088</p>
-          <em>📍 云南省·昆明市</em>
-        </div>
-        <button className="fmy-settings">⚙️ 设置</button>
+        {loggedIn && session ? (
+          <>
+            <div className="fmy-avatar-area" onClick={() => onEditProfile?.()}>
+              <div className="fmy-avatar">
+                {session.avatar ? <img src={session.avatar} alt="头像" /> : <img src="/assets/brand-logo.png" alt="头像" />}
+              </div>
+              <span>{session.memberLevelName || '农户会员'}</span>
+            </div>
+            <div className="fmy-user-info" onClick={() => onEditProfile?.()}>
+              <h2>{session.nickname || '农户用户'}</h2>
+              <p>ID: {session.phone || `FM${session.userId}`}</p>
+              <em><img src="/assets/icons/icon-pin.png" alt="" className="fmy-inline-icon" /> {session.city || '未设置地区'}</em>
+            </div>
+            <button className="fmy-settings" onClick={() => onOpenFarmerPage?.('farmerSettings')}><img src="/assets/icons/settings.png" alt="" className="fmy-inline-icon" /> 设置</button>
+          </>
+        ) : (
+          <>
+            <div className="fmy-avatar-area">
+              <div className="fmy-avatar"><img src="/assets/brand-logo.png" alt="默认头像" /></div>
+            </div>
+            <div className="fmy-user-info">
+              <h2>登录后管理农场</h2>
+              <p>登录后可同步作物档案、订单与农事数据</p>
+            </div>
+            <button className="fmy-settings" onClick={onLogin}>登录 / 注册</button>
+          </>
+        )}
       </section>
 
       <section className="fmy-stats-bar">
@@ -3120,7 +3427,7 @@ function Profile({
 
       <section className="fmy-section">
         <div className="fmy-section-head">
-          <b>🌾 作物档案</b>
+          <b><img src="/assets/icons/icon-rice.png" alt="" className="fmy-inline-icon" /> 作物档案</b>
           <button onClick={() => setMineModal('addCrop')}>＋ 添加档案</button>
         </div>
         <div className="fmy-crop-scroll">
@@ -3139,13 +3446,13 @@ function Profile({
 
       <section className="fmy-section">
         <div className="fmy-section-head">
-          <b>📋 历史识别记录</b>
+          <b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 历史识别记录</b>
           <button onClick={() => setMineModal('allHistory')}>更多 ›</button>
         </div>
         <div className="fmy-history-list">
           {farmerHistory.map((item) => (
             <article key={item.id} onClick={() => { setSelectedHistory(item); setMineModal('historyDetail'); }}>
-              <span>{item.icon}</span>
+              <span><img src={item.icon} alt="" className="fmy-grid-icon" /></span>
               <div><b>{item.crop}</b><p>{item.date} · {item.desc}</p></div>
               <em>{item.status}</em>
             </article>
@@ -3154,26 +3461,26 @@ function Profile({
       </section>
 
       <section className="fmy-community-entry" onClick={() => onOpenFarmerPage?.('community')}>
-        <div><span>🏘️</span><p><b>农友社区</b><small>与全国农友交流种植经验</small></p></div>
+        <div><span><img src="/assets/icons/icon-community.png" alt="" className="fmy-grid-icon" /></span><p><b>农友社区</b><small>与全国农友交流种植经验</small></p></div>
         <em>›</em>
       </section>
 
       <section className="fmy-section">
-        <div className="fmy-section-head"><b>📌 今日速览</b><span>{todayMonthDay} · {weekdayText}</span></div>
+        <div className="fmy-section-head"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 今日速览</b><span>{todayMonthDay} · {weekdayText}</span></div>
         <div className="fmy-today-grid">
-          <button onClick={() => onOpenFarmerPage?.('weatherDetail')}><span>🌤️</span><b>天气</b><em>晴 26°C</em><small>适宜作业</small></button>
-          <button><span>📋</span><b>待办</b><em>5项</em><small>2已完成</small></button>
-          <button onClick={() => onOpenFarmerPage?.('myDevice')}><span>📡</span><b>设备</b><em>6/6</em><small>全部在线</small></button>
-          <button onClick={() => onOpenFarmerPage?.('warningCenter')}><span>🔔</span><b>提醒</b><em>4条</em><small>1条紧急</small></button>
+          <button onClick={() => onOpenFarmerPage?.('weatherDetail')}><span><img src="/assets/icons/icon-sun.png" alt="" className="fmy-grid-icon" /></span><b>天气</b><em>晴 26°C</em><small>适宜作业</small></button>
+          <button><span><img src="/assets/icons/icon-list.png" alt="" className="fmy-grid-icon" /></span><b>待办</b><em>5项</em><small>2已完成</small></button>
+          <button onClick={() => onOpenFarmerPage?.('myDevice')}><span><img src="/assets/icons/device.png" alt="" className="fmy-grid-icon" /></span><b>设备</b><em>6/6</em><small>全部在线</small></button>
+          <button onClick={() => onOpenFarmerPage?.('warningCenter')}><span><img src="/assets/icons/icon-bell.png" alt="" className="fmy-grid-icon" /></span><b>提醒</b><em>4条</em><small>1条紧急</small></button>
         </div>
       </section>
 
       <section className="fmy-section">
-        <div className="fmy-section-head"><b>⚙️ 设备快捷</b><button onClick={() => onOpenFarmerPage?.('myDevice')}>管理 ›</button></div>
+        <div className="fmy-section-head"><b><img src="/assets/icons/settings.png" alt="" className="fmy-inline-icon" /> 设备快捷</b><button onClick={() => onOpenFarmerPage?.('myDevice')}>管理 ›</button></div>
         <div className="fmy-quick-device">
           {quickDevices.map((device) => (
             <button key={device.id} className={device.on ? 'on' : ''} onClick={() => setQuickDevices((prev) => prev.map((row) => row.id === device.id ? { ...row, on: !row.on } : row))}>
-              <span>{device.icon} {device.name}</span>
+              <span><img src={device.icon} alt="" className="fmy-inline-icon" /> {device.name}</span>
               <em>{device.on ? '运行中' : '已关闭'}</em>
             </button>
           ))}
@@ -3181,17 +3488,17 @@ function Profile({
       </section>
 
       <section className="fmy-alert-card">
-        <div><span>⛅</span><b>明日天气预报</b><em>{tomorrowMonthDay}</em></div>
+        <div><span><img src="/assets/icons/icon-cloudy.png" alt="" className="fmy-inline-icon" /></span><b>明日天气预报</b><em>{tomorrowMonthDay}</em></div>
         <p>多云转晴 · 18~27°C。东南风3级，湿度62%，无降水，适合追肥和病虫害防治。</p>
-        <footer><span>☀️ 适宜户外作业</span><span>💧 注意午间补水</span></footer>
+        <footer><span><img src="/assets/icons/icon-sun.png" alt="" className="fmy-inline-icon" /> 适宜户外作业</span><span><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" /> 注意午间补水</span></footer>
       </section>
 
       <section className="fmy-alert-list">
         {[
-          { icon: '🍅', title: '番茄追肥提醒', badge: '紧急', desc: '高原番茄进入花期，建议今日下午追加磷钾肥。', time: '今天 15:00 前' },
-          { icon: '🌶️', title: '辣椒蚜虫复查', badge: '待处理', desc: '线椒蚜虫喷药已过3天，请检查虫口密度是否下降。', time: '明天 上午' }
+          { icon: '/assets/icons/icon-tomato.png', title: '番茄追肥提醒', badge: '紧急', desc: '高原番茄进入花期，建议今日下午追加磷钾肥。', time: '今天 15:00 前' },
+          { icon: '/assets/icons/icon-bell-pepper.png', title: '辣椒蚜虫复查', badge: '待处理', desc: '线椒蚜虫喷药已过3天，请检查虫口密度是否下降。', time: '明天 上午' }
         ].map((item) => (
-          <article key={item.title}><div><span>{item.icon}</span><b>{item.title}</b><em>{item.badge}</em></div><p>{item.desc}</p><small>🕐 {item.time}</small></article>
+          <article key={item.title}><div><span><img src={item.icon} alt="" className="fmy-grid-icon" /></span><b>{item.title}</b><em>{item.badge}</em></div><p>{item.desc}</p><small><img src="/assets/icons/clock.png" alt="" className="fmy-inline-icon" /> {item.time}</small></article>
         ))}
       </section>
       <button className="secondary-btn wide" onClick={onSwitch}>切换身份</button>
@@ -3200,11 +3507,11 @@ function Profile({
           <section className={`farmer-modal-card ${mineModal === 'addCrop' || mineModal === 'allCrops' || mineModal === 'allHistory' ? 'large' : ''}`} onClick={(event) => event.stopPropagation()}>
             <div className="farmer-modal-head">
               <b>
-                {mineModal === 'addCrop' && '📋 添加作物档案'}
-                {mineModal === 'cropDetail' && '🌾 作物详情'}
-                {mineModal === 'historyDetail' && '📋 识别记录详情'}
-                {mineModal === 'allCrops' && `🌾 我的作物档案（共${cropList.length}个）`}
-                {mineModal === 'allHistory' && `📋 历史识别记录（共${farmerHistory.length}条）`}
+                {mineModal === 'addCrop' && <><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 添加作物档案</>}
+                {mineModal === 'cropDetail' && <><img src="/assets/icons/icon-rice.png" alt="" className="fmy-inline-icon" /> 作物详情</>}
+                {mineModal === 'historyDetail' && <><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 识别记录详情</>}
+                {mineModal === 'allCrops' && <><img src="/assets/icons/icon-rice.png" alt="" className="fmy-inline-icon" /> 我的作物档案（共{cropList.length}个）</>}
+                {mineModal === 'allHistory' && <><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 历史识别记录（共{farmerHistory.length}条）</>}
               </b>
               <button onClick={() => setMineModal(null)}>×</button>
             </div>
@@ -3213,7 +3520,7 @@ function Profile({
                 <label>作物名称<input value={cropDraft.name} onChange={(event) => setCropDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="例如：冰糖橙" /></label>
                 <label>种植面积（亩）<input value={cropDraft.area} onChange={(event) => setCropDraft((prev) => ({ ...prev, area: event.target.value }))} placeholder="例如：10" inputMode="decimal" /></label>
                 <label>定植日期<input value={cropDraft.date} onChange={(event) => setCropDraft((prev) => ({ ...prev, date: event.target.value }))} type="date" /></label>
-                <div className="farmer-upload-placeholder"><span>📷</span><b>＋ 上传照片</b><small>支持相册/相机上传</small></div>
+                <div className="farmer-upload-placeholder"><span><img src="/assets/icons/icon-camera.png" alt="" className="fmy-grid-icon" /></span><b>＋ 上传照片</b><small>支持相册/相机上传</small></div>
                 <button className="farmer-modal-primary" onClick={addCrop}>确认添加</button>
               </div>
             )}
@@ -3227,12 +3534,12 @@ function Profile({
                   <span>生长状态<b>{selectedCrop.status}</b></span>
                   <span>预计产量<b>{selectedCrop.yield}</b></span>
                 </div>
-                <p><b>📝 备注</b>{selectedCrop.note}</p>
+                <p><b><img src="/assets/icons/icon-note.png" alt="" className="fmy-inline-icon" /> 备注</b>{selectedCrop.note}</p>
               </div>
             )}
             {mineModal === 'historyDetail' && (
               <div className="farmer-history-detail-modal">
-                <div><span>{selectedHistory.icon}</span><h3>{selectedHistory.crop}</h3></div>
+                <div><span><img src={selectedHistory.icon} alt="" className="fmy-grid-icon" /></span><h3>{selectedHistory.crop}</h3></div>
                 <p><b>识别时间</b>{selectedHistory.date}</p>
                 <p><b>处理状态</b>{selectedHistory.status}</p>
                 <p><b>AI诊断结果</b>{selectedHistory.desc}</p>
@@ -3246,7 +3553,7 @@ function Profile({
             )}
             {mineModal === 'allHistory' && (
               <div className="farmer-full-history-list">
-                {farmerHistory.map((item) => <button key={item.id} onClick={() => { setSelectedHistory(item); setMineModal('historyDetail'); }}><span>{item.icon}</span><div><b>{item.crop}</b><small>{item.date}</small></div><em>{item.status}</em></button>)}
+                {farmerHistory.map((item) => <button key={item.id} onClick={() => { setSelectedHistory(item); setMineModal('historyDetail'); }}><span><img src={item.icon} alt="" className="fmy-grid-icon" /></span><div><b>{item.crop}</b><small>{item.date}</small></div><em>{item.status}</em></button>)}
               </div>
             )}
           </section>
@@ -3256,9 +3563,9 @@ function Profile({
   );
 }
 
-function FarmerSubPageMP({ page, onBack, onPage }: { page: FarmerPage; onBack: () => void; onPage: (page: FarmerPage) => void }) {
-  const titles: Record<Exclude<FarmerPage, 'tabs'>, string> = {
-    myCrops: '🌱 我的作物',
+function FarmerSubPageMP({ page, onBack, onPage, nickname, onSwitch, onOpenGeneral, onLogout, onEditProfile, onAddress, onPrivacy, onProfileChanged, onLogin, loggedIn, notify, addresses, selectedAddress, onSelectAddress, onAddressesChanged }: { page: FarmerPage; onBack: () => void; onPage: (page: FarmerPage) => void; nickname?: string; onSwitch: () => void; onOpenGeneral?: () => void; onLogout?: () => void; onEditProfile?: () => void; onAddress?: () => void; onPrivacy?: () => void; onProfileChanged?: () => void; onLogin?: () => void; loggedIn?: boolean; notify?: (message: string) => void; addresses?: Address[]; selectedAddress?: Address | null; onSelectAddress?: (address: Address | null) => void; onAddressesChanged?: () => Promise<void> }) {
+  const titles: Record<Exclude<FarmerPage, 'tabs'>, import('react').ReactNode> = {
+    myCrops: <><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-inline-icon" /> 我的作物</>,
     cropDetail: '作物详情',
     warningCenter: '预警中心',
     adoptionCenter: '云认养管理中心',
@@ -3269,97 +3576,379 @@ function FarmerSubPageMP({ page, onBack, onPage }: { page: FarmerPage; onBack: (
     locationMap: '基地地图',
     community: '农友社区',
     farmerSettings: '设置',
+    farmerGeneral: '通用设置',
+    farmerAddress: '收货地址',
+    farmerPrivacy: '账户数据与隐私',
     farmerOrders: '订单管理',
-    farmerOrderDetail: '订单详情'
+    farmerOrderDetail: '订单详情',
+    myOrders: '我的工单'
   };
   return (
     <div className="farmer-mp sub-mp">
       <header className="mp-sub-nav">
-        <button onClick={onBack}>← 返回</button>
+        <button onClick={onBack} aria-label="返回"><ChevronLeft size={16} />返回</button>
         <b>{titles[page as Exclude<FarmerPage, 'tabs'>]}</b>
         <span />
       </header>
-      <div className="farmer-sub-sample-note">体验样板 · 本页显示的数据与状态为示例内容</div>
       {page === 'myCrops' && <FarmerCropsPageMP onDetail={() => onPage('cropDetail')} />}
       {page === 'cropDetail' && <FarmerCropDetailPageMP />}
       {page === 'warningCenter' && <FarmerWarningPageMP />}
       {page === 'adoptionCenter' && <FarmerAdoptionOrdersMP />}
       {page === 'myDevice' && <FarmerDevicePageMP />}
-      {page === 'techSupport' && <FarmerTechSupportMP />}
+      {page === 'techSupport' && <FarmerTechSupportMP onPage={onPage} />}
+      {page === 'myOrders' && <FarmerWorkOrdersMP />}
           {page === 'weatherDetail' && <FarmerWeatherPageMP />}
           {page === 'voiceAssistant' && <FarmerVoiceAssistantMP />}
           {page === 'locationMap' && <FarmerLocationMapMP />}
           {page === 'community' && <CommunityMP />}
-          {page === 'farmerSettings' && <FarmerSettingsMP />}
-      {(page === 'farmerOrders' || page === 'farmerOrderDetail') && <div className="farmer-orders-empty"><b>农户订单服务尚未接入</b><p>当前没有可查询的真实订单记录。</p></div>}
+          {page === 'farmerSettings' && <FarmerSettingsMP nickname={nickname} loggedIn={loggedIn} onSwitch={onSwitch} onOpenGeneral={() => onPage('farmerGeneral')} onLogout={onLogout} onEditProfile={onEditProfile} onAddress={() => onPage('farmerAddress')} onPrivacy={() => onPage('farmerPrivacy')} onProfileChanged={onProfileChanged} onLogin={onLogin} notify={notify} />}
+          {page === 'farmerGeneral' && <GeneralSettingsPage onBack={() => onPage('farmerSettings')} notify={notify || (() => {})} />}
+          {page === 'farmerAddress' && <AddressPage addresses={addresses || []} selectedAddress={selectedAddress || null} onSelect={(a) => onSelectAddress?.(a)} onChanged={onAddressesChanged || (async () => {})} notify={notify || (() => {})} />}
+          {page === 'farmerPrivacy' && <PrivacyPage />}
+      {(page === 'farmerOrders' || page === 'farmerOrderDetail') && <FarmerOrdersMP />}
     </div>
   );
 }
 
-function FarmerSettingsMP() {
+function FarmerOrdersMP() {
+  const [orders, setOrders] = useState<FarmerOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [shipTarget, setShipTarget] = useState<FarmerOrder | null>(null);
+  const [company, setCompany] = useState('');
+  const [trackingNo, setTrackingNo] = useState('');
+  const [tip, setTip] = useState('');
+  const notify = (message: string) => { setTip(message); window.setTimeout(() => setTip(''), 1400); };
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerOrders().then((list) => { if (alive) { setOrders(list); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const doShip = async () => {
+    if (!shipTarget) return;
+    if (!company.trim() || !trackingNo.trim()) { notify('请填写物流公司和单号'); return; }
+    try {
+      await shipFarmerOrder(shipTarget.id, company.trim(), trackingNo.trim());
+      notify('已发货');
+      setShipTarget(null);
+      setCompany(''); setTrackingNo('');
+      const list = await fetchFarmerOrders();
+      setOrders(list);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : '发货失败');
+    }
+  };
+
+  const statusText: Record<string, string> = { pending: '待支付', paid: '待发货', shipped: '已发货', completed: '已完成', cancelled: '已取消' };
+
   return (
-    <div className="farmer-settings-mp">
-      <section className="farmer-settings-card">
-        <div className="farmer-settings-user">
-          <img src="/assets/logo.png" alt="" />
-          <div>
-            <b>小满合农户</b>
-            <span>云南昆明 · 智慧种植示范基地</span>
-          </div>
-          <em>已认证</em>
+    <div className="ac-page-mp">
+      <section className="ac-header-section-mp">
+        <span className="ac-bg one"><img src="/assets/icons/package.png" alt="" className="fmy-grid-icon" /></span><span className="ac-bg two"><img src="/assets/icons/truck.png" alt="" className="fmy-grid-icon" /></span><span className="ac-bg three"><img src="/assets/icons/icon-cloud.png" alt="" className="fmy-grid-icon" /></span>
+        <div className="ac-header-content-mp">
+          <h2><img src="/assets/icons/package.png" alt="" className="fmy-inline-icon" /> 订单管理</h2>
+          <p>处理消费者购买您农产品的订单</p>
+        </div>
+        <div className="ac-stats-card-mp">
+          <span><b>{orders.length}</b><em>订单总数</em></span>
+          <span><b>{orders.filter((o) => o.status === 'paid').length}</b><em>待发货</em></span>
+          <span><b>{orders.filter((o) => o.status === 'shipped').length}</b><em>已发货</em></span>
         </div>
       </section>
-      <section className="farmer-settings-card">
-        {[
-          ['账号与安全', '手机号、实名认证、登录设备'],
-          ['基地资料', '种植主体、基地地址、经营资质'],
-          ['消息通知', '预警、订单、设备离线提醒'],
-          ['隐私与权限', '相机、麦克风、定位授权'],
-          ['数据同步', '本地缓存、云端备份、离线记录']
-        ].map(([title, desc]) => (
-          <button className="farmer-settings-row" key={title}>
-            <span><b>{title}</b><small>{desc}</small></span>
-            <ChevronRight size={17} />
-          </button>
+      <div className="ac-list-header-mp"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 订单列表</b><span>共 {orders.length} 条</span></div>
+      {loading && <p className="farmer-orders-empty">加载中…</p>}
+      {!loading && orders.length === 0 && <div className="farmer-orders-empty"><b>暂无订单</b><p>消费者购买您的商品后会在这里展示。</p></div>}
+      <section className="ac-order-list-mp">
+        {orders.map((item) => (
+          <article className="ac-order-card-mp" key={item.id}>
+            <div className="aoc-top-mp">
+              <div className="aoc-product-mp"><span style={{ background: '#E8F5E9' }}><img src="/assets/icons/icon-cart.png" alt="" className="fmy-grid-icon" /></span><div><b>订单 {item.orderNo}</b><small>{item.createdAt}</small></div></div>
+              <em className={item.status}>{statusText[item.status] || item.statusText}</em>
+            </div>
+            <div className="aoc-detail-grid-mp">
+              {item.items.slice(0, 4).map((it, idx) => <span key={idx}>{it.name}×{it.quantity}<b>¥{(it.priceFen / 100).toFixed(2)}</b></span>)}
+            </div>
+            <p className="aoc-shipping-mp">合计金额：<b>¥{item.totalAmount.toFixed(2)}</b></p>
+            <footer>
+              {item.status === 'paid' && <button onClick={() => setShipTarget(item)}><img src="/assets/icons/truck.png" alt="" className="fmy-inline-icon" /> 发货</button>}
+              {item.status === 'shipped' && <button disabled>已发货</button>}
+            </footer>
+          </article>
         ))}
       </section>
-      <section className="farmer-settings-card">
-        <button className="farmer-settings-row">
-          <span><b>关于小满合</b><small>版本 1.0.0 · 服务协议与隐私政策</small></span>
-          <ChevronRight size={17} />
+      {shipTarget && (
+        <div className="address-sheet-mask" onClick={() => setShipTarget(null)}>
+          <section className="address-edit-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="trace-section-head"><b>订单发货</b><button onClick={() => setShipTarget(null)}>关闭</button></div>
+            <label className="addr-field"><span>物流公司</span><input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="如：顺丰速运" /></label>
+            <label className="addr-field"><span>物流单号</span><input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} placeholder="请输入运单号" /></label>
+            <button className="address-save-btn" onClick={doShip}>确认发货</button>
+          </section>
+        </div>
+      )}
+      {tip && <div className="global-toast-red">{tip}</div>}
+    </div>
+  );
+}
+
+function FarmerSettingsMP({ nickname, onSwitch, onOpenGeneral, onLogout, onEditProfile, onAddress, onPrivacy, onProfileChanged, onLogin, loggedIn, notify }: { nickname?: string; onSwitch?: () => void; onOpenGeneral?: () => void; onLogout?: () => void; onEditProfile?: () => void; onAddress?: () => void; onPrivacy?: () => void; onProfileChanged?: () => void; onLogin?: () => void; loggedIn?: boolean; notify?: (message: string) => void }) {
+  const [session] = useState(() => getStoredSession());
+  const [city, setCity] = useState(session?.city || '');
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [citySheet, setCitySheet] = useState(false);
+  const [fontSheet, setFontSheet] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [faqs, setFaqs] = useState<Faq[]>([]);
+  const [savingCity, setSavingCity] = useState(false);
+  const [feedback, setFeedback] = useState({ type: 'suggest', content: '', contact: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const isLoggedIn = loggedIn ?? Boolean(session);
+  const displayName = session?.nickname?.trim() || nickname?.trim() || (isLoggedIn ? '农户用户' : '未登录');
+  const CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '昆明'];
+  const FONT_LABEL: Record<number, string> = { 1: '小', 2: '标准', 3: '大' };
+
+  useEffect(() => {
+    let alive = true;
+    fetchUserSettings().then((s) => { if (alive) setSettings(s); }).catch(() => { if (alive) setSettings({ orderNotify: true, logisticsNotify: true, promoNotify: true, communityNotify: true, personalizedRecommend: true, footprintVisible: true, voiceEnabled: false, dataSaver: false, fontScale: 2 }); });
+    return () => { alive = false; };
+  }, []);
+
+  const togglePref = async (key: 'voiceEnabled' | 'dataSaver') => {
+    if (!settings) return;
+    const next = !settings[key];
+    const prev = settings;
+    setSettings({ ...settings, [key]: next });
+    try { setSettings(await updateUserSettings({ [key]: next })); } catch { setSettings(prev); notify?.('保存失败，请稍后重试'); }
+  };
+  const chooseFont = async (scale: number) => {
+    setFontSheet(false);
+    if (!settings || scale === settings.fontScale) return;
+    const prev = settings;
+    setSettings({ ...settings, fontScale: scale });
+    try { setSettings(await updateUserSettings({ fontScale: scale })); notify?.('字体大小已更新'); } catch { setSettings(prev); notify?.('保存失败，请稍后重试'); }
+  };
+  const chooseCity = async (c: string) => {
+    setCitySheet(false);
+    if (savingCity || c === city) return;
+    setSavingCity(true);
+    try {
+      await updateProfile({ city: c });
+      setCity(c);
+      notify?.('城市已更新');
+      onProfileChanged?.();
+    } catch (error) {
+      notify?.(error instanceof Error ? error.message : '城市保存失败');
+    } finally {
+      setSavingCity(false);
+    }
+  };
+  const openHelp = () => {
+    setHelpOpen(true);
+    fetchFaqs().then(setFaqs).catch(() => {});
+  };
+  const submit = async () => {
+    const content = feedback.content.trim();
+    if (!content) { notify?.('请填写反馈内容'); return; }
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await submitFeedback(feedback.type, content, feedback.contact.trim());
+      setFeedbackOpen(false);
+      setFeedback({ type: 'suggest', content: '', contact: '' });
+      notify?.('感谢你的反馈');
+    } catch (error) {
+      notify?.(error instanceof Error ? error.message : '提交失败，请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const goEdit = () => { if (isLoggedIn) onEditProfile?.(); else onLogin?.(); };
+
+  const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) => (
+    <button className={`st-toggle ${on ? 'on' : ''}`} onClick={() => onChange(!on)} aria-label="开关"><i /></button>
+  );
+
+  return (
+    <div className="settings-red mp-settings-page st-page">
+      <section className="st-group">
+        <div className="st-group-title">个人信息</div>
+        <button className="st-row" onClick={goEdit}>
+          <span className="st-icon"><img src="/assets/icons/user.png" alt="" /></span><span className="st-label">昵称</span>
+          <em>{displayName}</em><ChevronRight size={16} />
+        </button>
+        <button className="st-row" disabled={!isLoggedIn} onClick={() => setCitySheet(true)}>
+          <span className="st-icon"><img src="/assets/icons/pin.png" alt="" /></span><span className="st-label">城市</span>
+          <em className={city ? '' : 'st-placeholder'}>{city || '未设置'}</em><ChevronRight size={16} />
         </button>
       </section>
+
+      <section className="st-group">
+        <div className="st-group-title">通用</div>
+        <button className="st-row" onClick={() => setFontSheet(true)}>
+          <span className="st-icon"><img src="/assets/icons/font.png" alt="" /></span><span className="st-label">字体大小</span>
+          <em>{FONT_LABEL[settings?.fontScale ?? 2] || '标准'}</em><ChevronRight size={16} />
+        </button>
+        <div className="st-row">
+          <span className="st-icon"><img src="/assets/icons/voice.png" alt="" /></span><span className="st-label">语音播报</span>
+          <Toggle on={Boolean(settings?.voiceEnabled)} onChange={() => togglePref('voiceEnabled')} />
+        </div>
+        <div className="st-row">
+          <span className="st-icon"><img src="/assets/icons/signal.png" alt="" /></span><span className="st-label">图片省流模式</span>
+          <Toggle on={Boolean(settings?.dataSaver)} onChange={() => togglePref('dataSaver')} />
+        </div>
+      </section>
+
+      <section className="st-group">
+        <div className="st-group-title">通用设置</div>
+        <button className="st-row" onClick={() => onOpenGeneral?.()}>
+          <span className="st-icon"><img src="/assets/icons/general.png" alt="" /></span><span className="st-label">通用设置</span>
+          <em className="st-placeholder">修改密码 · 消息通知 · 隐私</em><ChevronRight size={16} />
+        </button>
+      </section>
+
+      <section className="st-group">
+        <div className="st-group-title">更多</div>
+        <button className="st-row" disabled={!isLoggedIn} onClick={() => onAddress?.()}>
+          <span className="st-icon"><img src="/assets/icons/truck.png" alt="" /></span><span className="st-label">收货地址</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={() => onPrivacy?.()}>
+          <span className="st-icon"><img src="/assets/icons/shield.png" alt="" /></span><span className="st-label">账户数据与隐私</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={() => setFeedbackOpen(true)}>
+          <span className="st-icon"><img src="/assets/icons/chat.png" alt="" /></span><span className="st-label">意见反馈</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={openHelp}>
+          <span className="st-icon"><img src="/assets/icons/help.png" alt="" /></span><span className="st-label">帮助中心</span><ChevronRight size={16} />
+        </button>
+      </section>
+
+      <section className="st-group">
+        <button className="st-row" onClick={() => onSwitch?.()}>
+          <span className="st-icon"><img src="/assets/icons/swap.png" alt="" /></span><span className="st-label">切换使用身份</span><ChevronRight size={16} />
+        </button>
+      </section>
+
+      {isLoggedIn
+        ? <button className="st-logout" onClick={() => { if (window.confirm('本机会话将移除，重新登录后可继续查看订单和地址。')) onLogout?.(); }}>退出当前账户</button>
+        : <button className="mp-login-button" onClick={() => onLogin?.()}>登录</button>}
+
+      <section className="mp-settings-about">
+        <img src="/assets/brand-logo.png" alt="耘露" />
+        <b>耘露</b>
+        <span>新鲜农货 · 产品溯源 · 云认养</span>
+        <small>Version 5.0</small>
+      </section>
+
+      {citySheet && createPortal(
+        <div className="st-sheet-mask" onClick={() => setCitySheet(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>选择城市</b><button onClick={() => setCitySheet(false)}>×</button></div>
+            {CITIES.map((c) => (
+              <button key={c} className={`st-sheet-row ${c === city ? 'active' : ''}`} disabled={savingCity} onClick={() => chooseCity(c)}>
+                {c}{c === city && <em>当前</em>}
+              </button>
+            ))}
+            <button className="st-sheet-row" disabled={savingCity} onClick={() => chooseCity('其他')}>其他</button>
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {fontSheet && createPortal(
+        <div className="st-sheet-mask" onClick={() => setFontSheet(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>字体大小</b><button onClick={() => setFontSheet(false)}>×</button></div>
+            {([1, 2, 3] as number[]).map((s) => (
+              <button key={s} className={`st-sheet-row ${settings?.fontScale === s ? 'active' : ''}`} onClick={() => chooseFont(s)}>
+                {FONT_LABEL[s]}{settings?.fontScale === s && <em>当前</em>}
+              </button>
+            ))}
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {feedbackOpen && createPortal(
+        <div className="st-sheet-mask" onClick={() => setFeedbackOpen(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>意见反馈</b><button onClick={() => setFeedbackOpen(false)}>×</button></div>
+            <div className="st-fb-types">
+              {([['suggest', '建议'], ['bug', '问题'], ['other', '其他']] as Array<[string, string]>).map(([val, label]) => (
+                <button key={val} className={feedback.type === val ? 'active' : ''} onClick={() => setFeedback({ ...feedback, type: val })}>{label}</button>
+              ))}
+            </div>
+            <textarea className="st-fb-text" rows={4} maxLength={1000} placeholder="请描述你的建议或遇到的问题…" value={feedback.content} onChange={(e) => setFeedback({ ...feedback, content: e.target.value })} />
+            <input className="st-fb-contact" placeholder="联系方式（选填）" value={feedback.contact} onChange={(e) => setFeedback({ ...feedback, contact: e.target.value })} />
+            <button className="st-fb-submit" disabled={submitting} onClick={submit}>{submitting ? '提交中…' : '提交反馈'}</button>
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {helpOpen && createPortal(
+        <div className="st-sheet-mask" onClick={() => setHelpOpen(false)}>
+          <section className="st-sheet st-help-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>帮助中心</b><button onClick={() => setHelpOpen(false)}>×</button></div>
+            {faqs.length === 0 && <p className="st-help-empty">正在加载常见问题…</p>}
+            {faqs.map((f) => (
+              <div key={f.q} className="st-faq">
+                <b>{f.q}</b>
+                <p>{f.a}</p>
+              </div>
+            ))}
+            <p className="st-help-foot">更多帮助可联系在线客服</p>
+          </section>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 function FarmerCropsPageMP({ onDetail }: { onDetail: () => void }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [crops, setCrops] = useState<FarmerCrop[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerCrops().then((list) => { if (alive) setCrops(list); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const growingCount = crops.filter((c) => c.status === 'growing').length;
+  const matureCount = crops.filter((c) => c.status === 'mature').length;
   return (
     <div className="crop-page-mp">
       <section className="crop-stats-card">
-        <span><b>{mpCrops.length}</b>种植总数</span><i /><span><b>2</b>生长中</span><i /><span><b>1</b>待采收</span>
+        <span><b>{crops.length || 0}</b>种植总数</span><i /><span><b>{growingCount}</b>生长中</span><i /><span><b>{matureCount}</b>待采收</span>
       </section>
       <section className="crop-list-mp">
-        {mpCrops.map((crop) => <article className="crop-card-mp" key={crop.id} onClick={onDetail}><i style={{ background: crop.color }} /><div><div className="crop-top-row"><b><span>{crop.icon}</span>{crop.name}</b><em className={crop.status}>{crop.statusText}</em></div><div className="progress-header"><span>生长进度</span><b>{crop.progress}%</b></div><div className="mp-progress"><i style={{ width: `${crop.progress}%`, background: crop.color }} /></div><div className="info-grid"><span>种植时间<b>{crop.plantDate}</b></span><span>预计采收<b>{crop.expectHarvest}</b></span><span>种植面积<b>{crop.area}</b></span><span>健康状态<b>{crop.healthStatus}</b></span></div><footer>📍 {crop.greenhouse}<small>距采收 {crop.daysToHarvest}天</small></footer></div><strong>›</strong></article>)}
+        {crops.map((crop) => <article className="crop-card-mp" key={crop.id} onClick={onDetail}><i style={{ background: crop.color }} /><div><div className="crop-top-row"><b><span><img src={crop.icon} alt="" className="fmy-grid-icon" /></span>{crop.name}</b><em className={crop.status}>{crop.statusText}</em></div><div className="progress-header"><span>生长进度</span><b>{crop.progress}%</b></div><div className="mp-progress"><i style={{ width: `${crop.progress}%`, background: crop.color }} /></div><div className="info-grid"><span>种植时间<b>{crop.plantDate}</b></span><span>预计采收<b>{crop.expectHarvest}</b></span><span>种植面积<b>{crop.area}</b></span><span>健康状态<b>{crop.healthStatus}</b></span></div><footer><img src="/assets/icons/icon-location.png" alt="" className="fmy-inline-icon" /> {crop.greenhouse}<small>距采收 {crop.daysToHarvest}天</small></footer></div><strong>›</strong></article>)}
+        {!crops.length && <div className="mp-empty"><img src="/assets/miniprogram/farmer-icons/bag.png" alt=""/><b>还没有作物档案</b><span>点击右下角添加第一份作物档案</span></div>}
       </section>
       <button className="floating-add" onClick={() => setShowAdd(true)}>＋ 添加作物</button>
-      {showAdd && <div className="farmer-modal-mask" onClick={() => setShowAdd(false)}><section className="mp-sheet" onClick={(event) => event.stopPropagation()}><div className="farmer-modal-head"><b>🌱 添加新作物</b><button onClick={() => setShowAdd(false)}>×</button></div><div className="mp-form"><label>作物名称<input placeholder="如：番茄、辣椒、黄瓜" /></label><label>种植日期<input type="date" /></label><label>预计采收<input type="date" /></label><label>种植位置<input placeholder="如：A区1号棚" /></label><button className="mp-primary" onClick={() => setShowAdd(false)}>确认添加</button></div></section></div>}
+      {showAdd && <div className="farmer-modal-mask" onClick={() => setShowAdd(false)}><section className="mp-sheet" onClick={(event) => event.stopPropagation()}><div className="farmer-modal-head"><b><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-inline-icon" /> 添加新作物</b><button onClick={() => setShowAdd(false)}>×</button></div><div className="mp-form"><label>作物名称<input placeholder="如：番茄、辣椒、黄瓜" /></label><label>种植日期<input type="date" /></label><label>预计采收<input type="date" /></label><label>种植位置<input placeholder="如：A区1号棚" /></label><button className="mp-primary" onClick={() => setShowAdd(false)}>确认添加</button></div></section></div>}
     </div>
   );
 }
 
 function FarmerCropDetailPageMP() {
-  const crop = mpCrops[0];
+  const [crop, setCrop] = useState<FarmerCrop | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerCrops().then((list) => { if (alive && list.length) setCrop(list[0]); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!crop) return <div className="crop-detail-mp"><section className="mp-empty"><img src="/assets/miniprogram/farmer-icons/bag.png" alt=""/><b>加载中…</b><span>正在读取作物档案</span></section></div>;
   return (
     <div className="crop-detail-mp">
       <section className="detail-header-mp" style={{ background: `linear-gradient(160deg, ${crop.color}, ${crop.color}99 55%, #F5F7FA)` }}>
-        <div className="hero-card"><div className="hero-icon-wrap">{crop.icon}</div><h2>{crop.name}</h2><p>樱桃番茄 · 开花坐果期</p><div><em>{crop.statusText}</em><em>{crop.healthStatus}</em></div><div className="progress-ring"><b>{crop.progress}</b><span>%</span><small>生长进度</small></div></div>
+        <div className="hero-card"><div className="hero-icon-wrap">{crop.icon}</div><h2>{crop.name}</h2><p>{crop.category || '作物'} · 生长中</p><div><em>{crop.statusText}</em><em>{crop.healthStatus}</em></div><div className="progress-ring"><b>{crop.progress}</b><span>%</span><small>生长进度</small></div></div>
       </section>
-      <section className="section-card"><div className="mp-section-title"><b>📋 基本信息</b></div><div className="info-grid-detail">{['品种|阳光小番茄', '位置|A区1号棚', '面积|3.2亩', '已生长|72天'].map((row) => { const [label, value] = row.split('|'); return <article key={label}><span>{label}</span><b>{value}</b></article>; })}</div></section>
-      <section className="section-card"><div className="mp-section-title"><b>🌿 生长阶段</b></div><div className="timeline-mp">{['播种建档', '移栽定植', '开花坐果', '采收入库'].map((item, index) => <p key={item} className={index <= 2 ? 'active' : ''}><i />{item}<span>{index < 2 ? '已完成' : index === 2 ? '进行中' : '待开始'}</span></p>)}</div></section>
-      <section className="section-card"><div className="mp-section-title"><b>📝 最近农事记录</b><button>查看全部 ›</button></div>{['6-12 追肥：追加磷钾肥', '6-10 巡检：叶片健康', '6-08 浇水：滴灌20分钟'].map((item) => <article className="record-item" key={item}>{item}</article>)}</section>
-      <section className="section-card env-grid-detail">{['棚内温度 26°C', '空气湿度 71%', '土壤pH 6.8', '光照 18200lux'].map((item) => <span key={item}>{item}</span>)}</section>
+      <section className="section-card"><div className="mp-section-title"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 基本信息</b></div><div className="info-grid-detail">{[`品种|${crop.name}`, `位置|${crop.greenhouse || '未设置'}`, `面积|${crop.area}`, `已生长|${crop.daysToHarvest}天`].map((row) => { const [label, value] = row.split('|'); return <article key={label}><span>{label}</span><b>{value}</b></article>; })}</div></section>
+      <section className="section-card"><div className="mp-section-title"><b><img src="/assets/icons/icon-herb.png" alt="" className="fmy-inline-icon" /> 生长阶段</b></div><div className="timeline-mp">{['播种建档', '移栽定植', '开花坐果', '采收入库'].map((item, index) => <p key={item} className={index <= 2 ? 'active' : ''}><i />{item}<span>{index < 2 ? '已完成' : index === 2 ? '进行中' : '待开始'}</span></p>)}</div></section>
+      <section className="section-card"><div className="mp-section-title"><b><img src="/assets/icons/icon-note.png" alt="" className="fmy-inline-icon" /> 最近农事记录</b><button>查看全部 ›</button></div>{['种植日期：' + crop.plantDate, '预计采收：' + crop.expectHarvest, '健康状态：' + crop.healthStatus].map((item) => <article className="record-item" key={item}>{item}</article>)}</section>
+      <section className="section-card env-grid-detail">{[`种植面积 ${crop.area}`, `种植位置 ${crop.greenhouse || '未设置'}`, `健康状态 ${crop.healthStatus}`, `距采收 ${crop.daysToHarvest}天`].map((item) => <span key={item}>{item}</span>)}</section>
     </div>
   );
 }
@@ -3367,12 +3956,38 @@ function FarmerCropDetailPageMP() {
 function FarmerWarningPageMP() {
   const [tab, setTab] = useState<'all' | 'weather' | 'device' | 'crop'>('all');
   const [status, setStatus] = useState<'open' | 'processing' | 'done'>('open');
-  const [warnings, setWarnings] = useState([
-    { id: 1, cat: 'weather', icon: '🌧️', title: '强降雨风险预警', target: '昆明基地 · 全园区', desc: '未来6小时可能出现短时强降雨，低洼地块有积水风险。', advice: '立即检查排水沟、关闭低位配电箱，并暂停露天施肥作业。', level: 'red', levelText: '紧急', time: '10分钟前', read: false, state: 'open', metric: '降雨量', value: '38mm', threshold: '25mm' },
-    { id: 2, cat: 'device', icon: '📡', title: '1号棚温度过高', target: '温湿度传感器 TH-01', desc: '棚内温度持续 20 分钟高于安全阈值，影响番茄坐果。', advice: '建议开启通风扇和卷膜机，10分钟后复查温度曲线。', level: 'orange', levelText: '重要', time: '20分钟前', read: false, state: 'processing', metric: '当前温度', value: '31.6°C', threshold: '28°C' },
-    { id: 3, cat: 'crop', icon: '🌱', title: '小番茄灰霉病风险', target: '阳光番茄 · A区1号棚', desc: '叶面湿度偏高且夜间温差变大，灰霉病风险升高。', advice: '加强通风，摘除病残叶，必要时使用低毒保护性药剂。', level: 'yellow', levelText: '提醒', time: '1小时前', read: true, state: 'open', metric: '风险指数', value: '72', threshold: '60' },
-    { id: 4, cat: 'device', icon: '📹', title: '北门摄像头离线', target: '摄像头 CAM-04', desc: '设备已离线 3 小时，无法上传画面。', advice: '检查供电和网络，必要时重启网关。', level: 'blue', levelText: '一般', time: '3小时前', read: true, state: 'done', metric: '离线时长', value: '3h', threshold: '30min' }
-  ]);
+  const [warnings, setWarnings] = useState<Array<{ id: number; cat: string; icon: string; title: string; target: string; desc: string; advice: string; level: string; levelText: string; time: string; read: boolean; state: string; metric: string; value: string; threshold: string }>>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerWarnings().then((list) => {
+      if (!alive) return;
+      const mapped = list.map((w) => ({
+        id: w.id,
+        cat: w.cat,
+        icon: w.icon || '/assets/icons/icon-announce.png',
+        title: w.title,
+        target: '',
+        desc: w.desc,
+        advice: '',
+        level: w.level,
+        levelText: w.levelText,
+        time: w.time,
+        read: w.read,
+        state: w.read ? 'done' : 'open',
+        metric: '',
+        value: '',
+        threshold: '',
+      }));
+      setWarnings(mapped.length ? mapped : [
+        { id: 1, cat: 'weather', icon: '/assets/icons/icon-rain.png', title: '强降雨风险预警', target: '昆明基地 · 全园区', desc: '未来6小时可能出现短时强降雨，低洼地块有积水风险。', advice: '立即检查排水沟、关闭低位配电箱，并暂停露天施肥作业。', level: 'red', levelText: '紧急', time: '10分钟前', read: false, state: 'open', metric: '降雨量', value: '38mm', threshold: '25mm' },
+        { id: 2, cat: 'device', icon: '/assets/icons/device.png', title: '1号棚温度过高', target: '温湿度传感器 TH-01', desc: '棚内温度持续 20 分钟高于安全阈值。', advice: '建议开启通风扇和卷膜机。', level: 'orange', levelText: '重要', time: '20分钟前', read: false, state: 'open', metric: '当前温度', value: '31.6°C', threshold: '28°C' },
+        { id: 3, cat: 'crop', icon: '/assets/icons/icon-leaf.png', title: '小番茄灰霉病风险', target: '阳光番茄 · A区1号棚', desc: '叶面湿度偏高，灰霉病风险升高。', advice: '加强通风，摘除病残叶。', level: 'yellow', levelText: '提醒', time: '1小时前', read: false, state: 'open', metric: '风险指数', value: '72', threshold: '60' }
+      ]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const list = (tab === 'all' ? warnings : warnings.filter((item) => item.cat === tab)).filter((item) => item.state === status);
   const unread = warnings.filter((item) => !item.read).length;
   const counts = {
@@ -3387,7 +4002,7 @@ function FarmerWarningPageMP() {
       <section className="warn-summary">
         <div className="summary-main">
           <div className={`summary-icon-area ${unread > 0 ? 'has-warning' : ''}`}>
-            <span>⚠️</span>
+            <span><img src="/assets/icons/icon-announce.png" alt="" className="fmy-grid-icon" /></span>
             {unread > 0 && <em>{unread}</em>}
           </div>
           <div>
@@ -3396,22 +4011,22 @@ function FarmerWarningPageMP() {
           </div>
         </div>
         <div className="summary-stats">
-          <button className={tab === 'weather' ? 'active' : ''} onClick={() => setTab('weather')}>🌧️<b>{counts.weather}</b><span>天气</span></button>
+          <button className={tab === 'weather' ? 'active' : ''} onClick={() => setTab('weather')}><img src="/assets/icons/icon-rain.png" alt="" className="fmy-inline-icon" /><b>{counts.weather}</b><span>天气</span></button>
           <i />
-          <button className={tab === 'device' ? 'active' : ''} onClick={() => setTab('device')}>📡<b>{counts.device}</b><span>设备</span></button>
+          <button className={tab === 'device' ? 'active' : ''} onClick={() => setTab('device')}><img src="/assets/icons/device.png" alt="" className="fmy-inline-icon" /><b>{counts.device}</b><span>设备</span></button>
           <i />
-          <button className={tab === 'crop' ? 'active' : ''} onClick={() => setTab('crop')}>🌱<b>{counts.crop}</b><span>作物</span></button>
+          <button className={tab === 'crop' ? 'active' : ''} onClick={() => setTab('crop')}><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-inline-icon" /><b>{counts.crop}</b><span>作物</span></button>
         </div>
       </section>
 
       <section className="warn-control-card">
         <div className="warn-tabs">{(['all', 'weather', 'device', 'crop'] as const).map((id) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{id === 'all' ? '全部' : id === 'weather' ? '天气预警' : id === 'device' ? '设备预警' : '作物提示'}</button>)}</div>
         <div className="warn-status-tabs">{(['open', 'processing', 'done'] as const).map((id) => <button key={id} className={status === id ? 'active' : ''} onClick={() => setStatus(id)}>{id === 'open' ? '待处理' : id === 'processing' ? '处理中' : '已处理'}</button>)}</div>
-        <button className="warn-read-all" onClick={markAllRead}>📋 全部标记已读</button>
+        <button className="warn-read-all" onClick={markAllRead}><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 全部标记已读</button>
       </section>
 
       <section className="warn-list">
-        {list.length === 0 && <div className="warn-empty"><span>✓</span><b>该分类下暂无预警</b><p>系统将持续监测天气、设备和作物风险。</p></div>}
+        {list.length === 0 && <div className="warn-empty"><span><img src="/assets/icons/icon-check.png" alt="" className="fmy-grid-icon" /></span><b>该分类下暂无预警</b><p>系统将持续监测天气、设备和作物风险。</p></div>}
         {list.map((item) => (
           <article className={`warn-card warn-${item.level} ${item.cat}`} key={item.id}>
             <i />
@@ -3421,7 +4036,7 @@ function FarmerWarningPageMP() {
                 <span>{item.read ? '已读' : '未读'} · {item.time}</span>
               </div>
               <div className="warn-card-title">
-                <span>{item.icon}</span>
+                <span><img src={item.icon} alt="" className="fmy-grid-icon" /></span>
                 <div><h3>{item.title}</h3><p>{item.target}</p></div>
               </div>
               <div className="warn-param-row">
@@ -3445,78 +4060,132 @@ function FarmerWarningPageMP() {
 }
 
 function FarmerAdoptionOrdersMP() {
-  const [orders, setOrders] = useState([
-    { id: 1, icon: '🍊', bg: '#FFF3E0', productName: '冰糖橙树 #001', packageName: '橙子树认养 · 年度方案', customerName: '李女士', phone: '138****5678', quantity: '1棵', amount: '199.00', start: '2026-01-15', harvest: '2026年11月', address: '云南省昆明市五华区xx路xx小区3栋201室', remark: '希望收获季多拍一些果树照片发给我', status: '生长中', key: 'growing', progress: 65, stage: '果实膨大期，预计11月中旬成熟', canShip: false },
-    { id: 2, icon: '🥬', bg: '#E8F5E9', productName: '有机蔬菜地 #A07', packageName: '蔬菜地认养 · 季度方案', customerName: '赵女士', phone: '135****2345', quantity: '1块', amount: '99.00', start: '2026-03-15', harvest: '2026年6月', address: '云南省曲靖市麒麟区xx街xx花园5栋102', remark: '', status: '待发货', key: 'ready', progress: 82, stage: '第一季蔬菜已采收，待安排配送', canShip: true },
-    { id: 3, icon: '🍓', bg: '#FCE4EC', productName: '草莓大棚 #B02', packageName: '草莓大棚认养 · 季度方案', customerName: '张阿姨', phone: '137****9876', quantity: '1个区域', amount: '299.00', start: '2026-03-10', harvest: '2026年6月底', address: '云南省丽江市古城区xx路xx号', remark: '第一次认养草莓，很期待', status: '生长中', key: 'growing', progress: 25, stage: '苗期生长阶段，开花中', canShip: false }
-  ]);
-  const totalIncome = orders.reduce((sum, item) => sum + Number(item.amount), 0).toFixed(0);
+  const [data, setData] = useState<FarmerAdoptionList>({ totalOrders: 0, totalIncome: '0', fansCount: 0, categorySummary: [], orders: [] });
+  const [loading, setLoading] = useState(true);
+  const [shipTarget, setShipTarget] = useState<FarmerAdoptionOrder | null>(null);
+  const [company, setCompany] = useState('');
+  const [trackingNo, setTrackingNo] = useState('');
+  const [tip, setTip] = useState('');
+  const notify = (message: string) => { setTip(message); window.setTimeout(() => setTip(''), 1400); };
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerAdoptionOrders().then((list) => { if (alive) { setData(list); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const doShip = async () => {
+    if (!shipTarget) return;
+    if (!company.trim() || !trackingNo.trim()) { notify('请填写物流公司和单号'); return; }
+    try {
+      await shipFarmerAdoptionOrder(shipTarget.id, company.trim(), trackingNo.trim());
+      notify('已发货');
+      setShipTarget(null);
+      setCompany(''); setTrackingNo('');
+      const list = await fetchFarmerAdoptionOrders();
+      setData(list);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : '发货失败');
+    }
+  };
+
   return (
     <div className="ac-page-mp">
       <section className="ac-header-section-mp">
-        <span className="ac-bg one">🌾</span><span className="ac-bg two">🍃</span><span className="ac-bg three">☁️</span>
+        <span className="ac-bg one"><img src="/assets/icons/icon-rice.png" alt="" className="fmy-grid-icon" /></span><span className="ac-bg two"><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-grid-icon" /></span><span className="ac-bg three"><img src="/assets/icons/icon-cloud.png" alt="" className="fmy-grid-icon" /></span>
         <div className="ac-header-content-mp">
-          <h2>☁️ 云认养管理中心</h2>
+          <h2><img src="/assets/icons/icon-cloud.png" alt="" className="fmy-inline-icon" /> 云认养管理中心</h2>
           <p>实时查看消费者认养您的农产品情况</p>
         </div>
         <div className="ac-stats-card-mp">
-          <span><b>{orders.length}</b><em>认养订单</em></span>
-          <span><b>¥{totalIncome}</b><em>认养收入</em></span>
-          <span><b>6</b><em>认养粉丝</em></span>
+          <span><b>{data.totalOrders}</b><em>认养订单</em></span>
+          <span><b>¥{data.totalIncome}</b><em>认养收入</em></span>
+          <span><b>{data.fansCount}</b><em>认养粉丝</em></span>
         </div>
       </section>
       <section className="ac-category-row-mp">
-        {['🍊 橙子树认养 1单', '🥬 蔬菜地认养 1单', '🍓 草莓大棚 1单', '🍵 茶园认养 0单'].map((item) => <button key={item}>{item}</button>)}
+        {data.categorySummary.length ? data.categorySummary.map((item) => <button key={item.name}><img src={item.icon} alt="" className="fmy-inline-icon" /> {item.name} {item.count}单</button>) : <button>暂无认养分类</button>}
       </section>
-      <div className="ac-list-header-mp"><b>📋 认养订单详情</b><span>共 {orders.length} 条记录</span></div>
+      <div className="ac-list-header-mp"><b><img src="/assets/icons/icon-list.png" alt="" className="fmy-inline-icon" /> 认养订单详情</b><span>共 {data.orders.length} 条记录</span></div>
+      {loading && <p className="farmer-orders-empty">加载中…</p>}
+      {!loading && data.orders.length === 0 && <div className="farmer-orders-empty"><b>暂无认养订单</b><p>消费者认养您的农产品后会在这里展示。</p></div>}
       <section className="ac-order-list-mp">
-        {orders.map((item) => (
+        {data.orders.map((item) => (
           <article className="ac-order-card-mp" key={item.id}>
             <div className="aoc-top-mp">
-              <div className="aoc-product-mp"><span style={{ background: item.bg }}>{item.icon}</span><div><b>{item.productName}</b><small>方案：{item.packageName}</small></div></div>
-              <em className={item.key}>{item.status}</em>
+              <div className="aoc-product-mp"><span style={{ background: item.bg }}><img src={item.icon} alt="" className="fmy-grid-icon" /></span><div><b>{item.productName}</b><small>方案：{item.packageName}</small></div></div>
+              <em className={item.statusKey}>{item.statusText}</em>
             </div>
-            <div className="aoc-customer-row-mp">👤 <b>{item.customerName}</b><span>{item.phone}</span></div>
+            <div className="aoc-customer-row-mp"><img src="/assets/icons/user.png" alt="" className="fmy-inline-icon" /> <b>{item.customerName}</b><span>{item.customerPhone}</span></div>
             <div className="aoc-detail-grid-mp">
               <span>认养数量<b>{item.quantity}</b></span>
               <span>认养金额<b>¥{item.amount}</b></span>
-              <span>开始日期<b>{item.start}</b></span>
-              <span>预计收获<b>{item.harvest}</b></span>
+              <span>开始日期<b>{item.startDate}</b></span>
+              <span>预计收获<b>{item.harvestDate}</b></span>
             </div>
-            <p className="aoc-shipping-mp">📍 收货地址：{item.address}</p>
-            {item.remark && <p className="aoc-remark-mp">📝 备注：{item.remark}</p>}
-            <div className="aoc-growth-section-mp"><div><b>🌱 生长进度</b><span>{item.progress}%</span></div><i><em style={{ width: `${item.progress}%` }} /></i><p>{item.stage}</p></div>
+            <p className="aoc-shipping-mp"><img src="/assets/icons/icon-location.png" alt="" className="fmy-inline-icon" /> 收货地址：{item.shipAddress}</p>
+            {item.remark && <p className="aoc-remark-mp"><img src="/assets/icons/icon-note.png" alt="" className="fmy-inline-icon" /> 备注：{item.remark}</p>}
+            <div className="aoc-growth-section-mp"><div><b><img src="/assets/icons/icon-leaf.png" alt="" className="fmy-inline-icon" /> 生长进度</b><span>{item.growthPercent}%</span></div><i><em style={{ width: `${item.growthPercent}%` }} /></i><p>{item.growthStage}</p></div>
             <footer>
-              <button>📱 联系认养人</button>
-              <button>🌿 查看生长</button>
-              {item.canShip && <button onClick={() => setOrders((prev) => prev.map((row) => row.id === item.id ? { ...row, status: '已发货', key: 'shipped', canShip: false, progress: 100, stage: '已安排冷链配送，等待消费者确认收货' } : row))}>🚚 安排发货</button>}
+              <button><img src="/assets/icons/icon-phone.png" alt="" className="fmy-inline-icon" /> 联系认养人</button>
+              <button><img src="/assets/icons/icon-herb.png" alt="" className="fmy-inline-icon" /> 查看生长</button>
+              {item.canShip && <button onClick={() => setShipTarget(item)}><img src="/assets/icons/truck.png" alt="" className="fmy-inline-icon" /> 安排发货</button>}
             </footer>
           </article>
         ))}
       </section>
+      {shipTarget && (
+        <div className="address-sheet-mask" onClick={() => setShipTarget(null)}>
+          <section className="address-edit-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="trace-section-head"><b>认养发货</b><button onClick={() => setShipTarget(null)}>关闭</button></div>
+            <label className="addr-field"><span>物流公司</span><input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="如：顺丰速运" /></label>
+            <label className="addr-field"><span>物流单号</span><input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} placeholder="请输入运单号" /></label>
+            <button className="address-save-btn" onClick={doShip}>确认发货</button>
+          </section>
+        </div>
+      )}
+      {tip && <div className="global-toast-red">{tip}</div>}
     </div>
   );
 }
 
 function FarmerDevicePageMP() {
-  const [devices, setDevices] = useState([...stationDevicesMock, ...cameraDevicesMock].map((item, index) => ({ ...item, isEnabled: index < 5 })));
+  const [devices, setDevices] = useState<Array<{ id: number; name: string; location: string; lastSeen: string; isOnline: boolean; isEnabled: boolean; kind: 'station' | 'camera' }>>([]);
   const [addOpen, setAddOpen] = useState(false);
-  const stationRows = devices.filter((item) => item.id < 100);
-  const cameraRows = devices.filter((item) => item.id >= 100);
-  const toggleDevice = (id: number) => setDevices((prev) => prev.map((row) => row.id === id ? { ...row, isEnabled: !row.isEnabled } : row));
+
+  useEffect(() => {
+    let alive = true;
+    fetchFarmerDevices().then(({ stations, cameras }) => {
+      if (!alive) return;
+      const mapped = [
+        ...stations.map((d) => ({ id: d.id, name: d.name, location: d.location, lastSeen: d.lastSeen, isOnline: d.isOnline, isEnabled: d.isEnabled, kind: 'station' as const })),
+        ...cameras.map((d) => ({ id: d.id + 1000, name: d.name, location: d.location, lastSeen: d.lastSeen, isOnline: d.isOnline, isEnabled: d.isEnabled, kind: 'camera' as const })),
+      ];
+      setDevices(mapped);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const stationRows = devices.filter((item) => item.kind === 'station');
+  const cameraRows = devices.filter((item) => item.kind === 'camera');
+  const toggleDevice = (id: number) => {
+    const device = devices.find((row) => row.id === id);
+    setDevices((prev) => prev.map((row) => row.id === id ? { ...row, isEnabled: !row.isEnabled } : row));
+    if (device) setFarmerDeviceEnabled(device.kind === 'camera' ? device.id - 1000 : device.id, !device.isEnabled).catch(() => {});
+  };
   const groups = [
-    { icon: '🌡️', title: '监测站设备', rows: stationRows, cam: false },
-    { icon: '📹', title: '摄像头设备', rows: cameraRows, cam: true }
+    { icon: '/assets/icons/icon-humidity.png', title: '监测站设备', rows: stationRows, cam: false },
+    { icon: '/assets/icons/icon-camera.png', title: '摄像头设备', rows: cameraRows, cam: true }
   ];
   return (
     <div className="device-mp device-replica">
       <section className="device-summary-card">
         <div>
-          <span>📡</span>
+          <span><img src="/assets/icons/device.png" alt="" className="fmy-grid-icon" /></span>
           <p><b>{devices.filter((item) => item.isOnline).length}/{devices.length}</b><small>设备在线</small></p>
         </div>
         <div>
-          <span>⚙️</span>
+          <span><img src="/assets/icons/settings.png" alt="" className="fmy-grid-icon" /></span>
           <p><b>{devices.filter((item) => item.isEnabled).length}</b><small>已启用</small></p>
         </div>
         <button onClick={() => setAddOpen(true)}>＋ 添加</button>
@@ -3525,7 +4194,7 @@ function FarmerDevicePageMP() {
       {groups.map((group) => (
         <section className="md-section" key={group.title}>
           <div className="md-section-title">
-            <span>{group.icon}</span>
+            <span><img src={group.icon} alt="" className="fmy-grid-icon" /></span>
             <b>{group.title}</b>
             <em>({group.rows.length})</em>
           </div>
@@ -3533,7 +4202,7 @@ function FarmerDevicePageMP() {
             {group.rows.map((device) => (
               <article className={`md-device-card ${device.isOnline ? 'card-online' : 'card-offline'}`} key={device.id}>
                 <div className={`md-dev-icon-wrap ${group.cam ? 'cam-icon' : ''} ${device.isOnline ? 'icon-online' : 'icon-offline'}`}>
-                  <span>{group.icon}</span>
+                  <span><img src={group.icon} alt="" className="fmy-grid-icon" /></span>
                 </div>
                 <div className="md-dev-info">
                   <div className="dev-top-row">
@@ -3556,8 +4225,8 @@ function FarmerDevicePageMP() {
         <div className="farmer-modal-mask" onClick={() => setAddOpen(false)}>
           <section className="device-add-sheet" onClick={(event) => event.stopPropagation()}>
             <div className="farmer-modal-head"><b>添加新设备</b><button onClick={() => setAddOpen(false)}>×</button></div>
-            <button onClick={() => setAddOpen(false)}>🌡️ 添加监测站传感器</button>
-            <button onClick={() => setAddOpen(false)}>📹 添加摄像头设备</button>
+            <button onClick={() => setAddOpen(false)}><img src="/assets/icons/icon-humidity.png" alt="" className="fmy-inline-icon" /> 添加监测站传感器</button>
+            <button onClick={() => setAddOpen(false)}><img src="/assets/icons/icon-camera.png" alt="" className="fmy-inline-icon" /> 添加摄像头设备</button>
             <button onClick={() => setAddOpen(false)}>▣ 扫码添加</button>
           </section>
         </div>
@@ -3566,7 +4235,7 @@ function FarmerDevicePageMP() {
   );
 }
 
-function FarmerTechSupportMP() {
+function FarmerTechSupportMP({ onPage }: { onPage: (page: FarmerPage) => void }) {
   const [tab, setTab] = useState<'service' | 'expert' | 'orders'>('service');
   const [sheet, setSheet] = useState<null | { title: string; action: string }>(null);
   const serviceCards = [
@@ -3611,16 +4280,17 @@ function FarmerTechSupportMP() {
       action: '申请检测'
     }
   ];
-  const experts = [
-    { name: '李明远', role: '高级农艺师', org: '云南省农科院蔬菜所', avatar: '李', online: true, rating: '4.9', consult: 326, response: '15分钟内响应', fields: ['番茄', '辣椒', '病虫害'], goodAt: '设施蔬菜花果期管理、灰霉病/蚜虫综合防治。' },
-    { name: '王秀兰', role: '植保专家', org: '昆明植保服务站', avatar: '王', online: true, rating: '4.8', consult: 241, response: '30分钟内响应', fields: ['植保', '用药', '诊断'], goodAt: '病斑识别、绿色防控、农药安全间隔期方案。' },
-    { name: '周建国', role: '农机工程师', org: '云耕农机合作社', avatar: '周', online: false, rating: '4.7', consult: 188, response: '明日 09:00 可约', fields: ['农机', '滴灌', '网关'], goodAt: '滴灌阀、卷膜机、网关联网和农机作业排期。' }
-  ];
-  const orders = [
-    { title: '1号棚温湿度传感器校准', status: '处理中', time: '今天 10:20', owner: '王工', progress: 60 },
-    { title: '无人机飞防 · 番茄A区 12亩', status: '已预约', time: '明天 08:30', owner: '云耕飞防队', progress: 35 },
-    { title: '土壤采样检测报告', status: '已完成', time: '昨天 17:40', owner: '平台实验室', progress: 100 }
-  ];
+  const [experts, setExperts] = useState<TechSupportExpert[]>([]);
+  const [repairs, setRepairs] = useState<TechRepair[]>([]);
+  const [bookings, setBookings] = useState<TechBooking[]>([]);
+  const [contact, setContact] = useState<TechContactInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchTechExperts(), fetchRepairs(1, 20), fetchBookings(1, 20), fetchTechContact()])
+      .then(([ex, rep, bk, ct]) => { if (alive) { setExperts(ex); setRepairs(rep.list); setBookings(bk.list); setContact(ct); } })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   return (
     <div className="tech-mp tech-replica">
       <section className="tech-hero-pro">
@@ -3637,6 +4307,14 @@ function FarmerTechSupportMP() {
         <span><b>96%</b><em>一次解决率</em></span>
         <span><b>24h</b><em>在线支持</em></span>
       </section>
+
+      {contact && (
+        <section className="tech-contact-bar">
+          <span><img src="/assets/icons/icon-phone.png" alt="" className="fmy-inline-icon" /> {contact.phoneDisplay}</span>
+          <span>{contact.workTime}</span>
+          {contact.onlineService && <em>在线客服</em>}
+        </section>
+      )}
 
       <div className="tech-tabs">
         <button className={tab === 'service' ? 'active' : ''} onClick={() => setTab('service')}>服务项目</button>
@@ -3663,16 +4341,16 @@ function FarmerTechSupportMP() {
       {tab === 'expert' && (
         <section className="tech-expert-list">
           {experts.map((expert) => (
-            <article className="tech-expert-card" key={expert.name}>
-              <div className="expert-avatar-pro"><span>{expert.avatar}</span><i className={expert.online ? 'online' : ''} /></div>
+            <article className="tech-expert-card" key={expert.id}>
+              <div className="expert-avatar-pro"><span>{expert.name.charAt(0)}</span><i className={expert.isOnline ? 'online' : ''} /></div>
               <div className="expert-main">
-                <div className="expert-name-row"><b>{expert.name}</b><em>{expert.role}</em></div>
-                <p>{expert.org}</p>
+                <div className="expert-name-row"><b>{expert.name}</b><em>{expert.title}</em></div>
+                <p>{expert.organization}</p>
                 <div className="expert-fields-pro">{expert.fields.map((field) => <span key={field}>{field}</span>)}</div>
-                <small>{expert.goodAt}</small>
-                <footer><span>⭐ {expert.rating}</span><span>咨询{expert.consult}次</span><span>{expert.response}</span></footer>
+                <small>{expert.tagText}</small>
+                <footer><span><img src="/assets/icons/star.png" alt="" className="fmy-inline-icon" /> {expert.rating}</span><span>咨询{expert.consultCount}次</span><span>{expert.isOnline ? '在线' : '离线'}</span></footer>
               </div>
-              <button onClick={() => setSheet({ title: `${expert.name} · ${expert.role}`, action: '发起咨询' })}>咨询</button>
+              <button onClick={() => setSheet({ title: `${expert.name} · ${expert.title}`, action: '发起咨询' })}>咨询</button>
             </article>
           ))}
         </section>
@@ -3680,12 +4358,18 @@ function FarmerTechSupportMP() {
 
       {tab === 'orders' && (
         <section className="tech-order-list">
-          {orders.map((order) => (
-            <article key={order.title}>
-              <div><b>{order.title}</b><em>{order.status}</em></div>
-              <p>{order.time} · 负责人：{order.owner}</p>
-              <i><span style={{ width: `${order.progress}%` }} /></i>
-              <button>查看工单</button>
+          <button className="tech-orders-entry" onClick={() => onPage('myOrders')}>查看全部工单 →</button>
+          {repairs.length === 0 && bookings.length === 0 && <div className="tech-empty">暂无服务工单，提交报修或预约后这里会显示进度。</div>}
+          {repairs.map((repair) => (
+            <article key={`r${repair.id}`}>
+              <div><b>{repair.deviceTypeName} · {repair.faultType}</b><em>{repair.statusText}</em></div>
+              <p>{repair.createdAt} · 工单号 {repair.repairNo}</p>
+            </article>
+          ))}
+          {bookings.map((booking) => (
+            <article key={`b${booking.id}`}>
+              <div><b>{booking.serviceName}</b><em>{booking.statusText}</em></div>
+              <p>{booking.bookDate} · 预约号 {booking.bookingNo}</p>
             </article>
           ))}
         </section>
@@ -3706,44 +4390,135 @@ function FarmerTechSupportMP() {
   );
 }
 
+function FarmerWorkOrdersMP() {
+  const [tab, setTab] = useState<'repair' | 'booking'>('repair');
+  const [repairs, setRepairs] = useState<TechRepair[]>([]);
+  const [bookings, setBookings] = useState<TechBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchRepairs(1, 50), fetchBookings(1, 50)])
+      .then(([repairResult, bookingResult]) => {
+        if (!alive) return;
+        setRepairs(repairResult.list);
+        setBookings(bookingResult.list);
+      })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="farmer-work-orders">
+      <div className="fwo-tabs">
+        <button className={tab === 'repair' ? 'active' : ''} onClick={() => setTab('repair')}>报修工单</button>
+        <button className={tab === 'booking' ? 'active' : ''} onClick={() => setTab('booking')}>服务预约</button>
+      </div>
+      {loading && <div className="fwo-empty">加载中…</div>}
+      {!loading && tab === 'repair' && (
+        <div className="fwo-list">
+          {repairs.length === 0 && <div className="fwo-empty">暂无工单</div>}
+          {repairs.map((repair) => (
+            <article key={`r${repair.id}`}>
+              <div><b>{repair.deviceTypeName} · {repair.faultType}</b><em>{repair.statusText}</em></div>
+              <p>{repair.createdAt} · 工单号 {repair.repairNo}</p>
+              {repair.description && <small>{repair.description}</small>}
+            </article>
+          ))}
+        </div>
+      )}
+      {!loading && tab === 'booking' && (
+        <div className="fwo-list">
+          {bookings.length === 0 && <div className="fwo-empty">暂无预约</div>}
+          {bookings.map((booking) => (
+            <article key={`b${booking.id}`}>
+              <div><b>{booking.serviceName}</b><em>{booking.statusText}</em></div>
+              <p>{booking.bookDate} · 预约号 {booking.bookingNo}</p>
+              {booking.contactName && <small>{booking.contactName} · {booking.contactPhone}</small>}
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FarmerWeatherPageMP() {
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchWeather().then((data) => {
+      if (alive && data) setWeather(data);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const weatherEmoji = (icon?: string) => {
+    const map: Record<string, string> = {
+      sunny: '/assets/icons/icon-sun.png', clear: '/assets/icons/icon-sun.png', cloudy: '/assets/icons/icon-cloudy.png', overcast: '/assets/icons/icon-cloud.png',
+      rain: '/assets/icons/icon-rain.png', rainy: '/assets/icons/icon-rain.png', shower: '/assets/icons/icon-cloudy.png', storm: '/assets/icons/icon-rain.png',
+      snow: '/assets/icons/icon-rain.png', fog: '/assets/icons/icon-fog.png', wind: '/assets/icons/icon-fog.png'
+    };
+    return map[(icon || '').toLowerCase()] || '/assets/icons/icon-cloudy.png';
+  };
+
+  const temp = weather?.temp && weather.temp !== '--' ? weather.temp : '26';
+  const desc = weather?.desc || '晴';
+  const humidity = weather?.humidity || '58%';
+  const wind = weather?.wind || '东南风3级';
+  const location = weather?.location || '昆明';
+  const advice = weather?.advice || '今日适宜户外作业，午后棚内温度升高，注意通风和补水。';
+
   const hours = [
-    ['现在', '☀️', '26°', '58%'],
-    ['12:00', '☀️', '28°', '54%'],
-    ['15:00', '🌤️', '29°', '52%'],
-    ['18:00', '🌦️', '25°', '66%'],
-    ['21:00', '🌙', '22°', '72%'],
-    ['00:00', '🌙', '19°', '76%']
+    ['现在', '/assets/icons/icon-sun.png', '26°', '58%'],
+    ['12:00', '/assets/icons/icon-sun.png', '28°', '54%'],
+    ['15:00', '/assets/icons/icon-cloudy.png', '29°', '52%'],
+    ['18:00', '/assets/icons/icon-cloudy.png', '25°', '66%'],
+    ['21:00', '/assets/icons/icon-moon.png', '22°', '72%'],
+    ['00:00', '/assets/icons/icon-moon.png', '19°', '76%']
   ];
-  const days = [
-    ['今天', '周三', '☀️', '晴', '29°', '18°', '适宜通风'],
-    ['明天', '周四', '🌦️', '阵雨', '27°', '19°', '暂停打药'],
-    ['6/19', '周五', '⛅', '多云', '28°', '18°', '适宜追肥'],
-    ['6/20', '周六', '🌧️', '小雨', '24°', '17°', '防积水'],
-    ['6/21', '周日', '☀️', '晴', '30°', '20°', '加强补水']
+  const mockDays = [
+    { date: '今天', week: '周三', icon: '/assets/icons/icon-sun.png', desc: '晴', high: '29°', low: '18°', tip: '适宜通风' },
+    { date: '明天', week: '周四', icon: '/assets/icons/icon-cloudy.png', desc: '阵雨', high: '27°', low: '19°', tip: '暂停打药' },
+    { date: '6/19', week: '周五', icon: '/assets/icons/icon-cloudy.png', desc: '多云', high: '28°', low: '18°', tip: '适宜追肥' },
+    { date: '6/20', week: '周六', icon: '/assets/icons/icon-rain.png', desc: '小雨', high: '24°', low: '17°', tip: '防积水' },
+    { date: '6/21', week: '周日', icon: '/assets/icons/icon-sun.png', desc: '晴', high: '30°', low: '20°', tip: '加强补水' }
   ];
+  const days = weather && weather.forecast.length
+    ? weather.forecast.map((item) => ({
+        date: item.date || '未来',
+        week: '',
+        icon: weatherEmoji(item.icon),
+        desc: item.weather || '--',
+        high: item.tempHigh ? `${item.tempHigh}°` : '--',
+        low: item.tempLow ? `${item.tempLow}°` : '--',
+        tip: ''
+      }))
+    : mockDays;
   const fieldRisks = [
     { name: '1号番茄棚', risk: '中', desc: '午后棚温偏高，建议 13:00 后通风。', color: '#ff9800' },
     { name: '露天A区玉米', risk: '低', desc: '风力较小，适合追肥和巡田。', color: '#43a047' },
     { name: '2号辣椒棚', risk: '中', desc: '夜间湿度上升，注意灰霉病预防。', color: '#ff9800' }
   ];
+  const detailItems: Array<[string, string, string]> = [
+    ['/assets/icons/icon-humidity.png', '当前温度', `${temp}°C`],
+    ['/assets/icons/icon-humidity.png', '空气湿度', humidity || '--'],
+    ['/assets/icons/icon-fog.png', '风力风向', wind || '--'],
+    ['/assets/icons/icon-rain.png', '降水概率', '--'],
+    ['/assets/icons/icon-chart.png', '气压', '--'],
+    ['/assets/icons/icon-sun.png', '紫外线', '--']
+  ];
   return (
     <div className="weather-mp weather-replica">
       <section className="current-weather">
-        <div className="weather-city-row"><div><b>昆明 · 智慧农业示范基地</b><span>更新于 10:30 · 自动站 TH-01</span></div><button>切换基地</button></div>
-        <div className="weather-main"><span>☀️</span><strong>26°</strong><div><b>晴</b><small>能见度 12km</small></div></div>
-        <p>今日适宜户外作业，午后棚内温度升高，注意通风和补水。</p>
+        <div className="weather-city-row"><div><b>{location} · 智慧农业示范基地</b><span>更新于 10:30 · 自动站 TH-01</span></div><button>切换基地</button></div>
+        <div className="weather-main"><span><img src={weatherEmoji(weather?.icon)} alt="" /></span><strong>{temp}°</strong><div><b>{desc}</b><small>能见度 12km</small></div></div>
+        <p>{advice}</p>
       </section>
 
       <section className="weather-detail-grid">
-        {[
-          ['🌡️', '体感温度', '27°C'],
-          ['💧', '空气湿度', '58%'],
-          ['🌬️', '风力风向', '东南风3级'],
-          ['🌧️', '降水概率', '12%'],
-          ['📈', '气压', '1012hPa'],
-          ['☀️', '紫外线', '中等']
-        ].map(([icon, label, value]) => <article key={label}><span>{icon}</span><small>{label}</small><b>{value}</b></article>)}
+        {detailItems.map(([icon, label, value]) => <article key={label}><span><img src={icon} alt="" className="fmy-grid-icon" /></span><small>{label}</small><b>{value}</b></article>)}
       </section>
 
       <section className="weather-aqi-card">
@@ -3753,13 +4528,13 @@ function FarmerWeatherPageMP() {
 
       <section className="weather-section">
         <div className="weather-section-title"><b>24小时农业气象</b><span>温度 / 湿度</span></div>
-        <div className="weather-hour-scroll">{hours.map(([time, icon, temp, hum]) => <article key={time}><span>{time}</span><b>{icon}</b><strong>{temp}</strong><small>{hum}</small></article>)}</div>
+        <div className="weather-hour-scroll">{hours.map(([time, icon, temp, hum]) => <article key={time}><span>{time}</span><b><img src={icon} alt="" className="fmy-grid-icon" /></b><strong>{temp}</strong><small>{hum}</small></article>)}</div>
       </section>
 
       <section className="weather-section">
         <div className="weather-section-title"><b>未来5天趋势</b><span>作业建议</span></div>
         <div className="weather-day-list">
-          {days.map(([date, week, icon, desc, high, low, tip]) => <article key={date}><div><b>{date}</b><span>{week}</span></div><em>{icon}</em><p>{desc}</p><strong>{high}/{low}</strong><small>{tip}</small></article>)}
+          {days.map((item) => <article key={item.date}><div><b>{item.date}</b><span>{item.week}</span></div><em><img src={item.icon} alt="" className="fmy-grid-icon" /></em><p>{item.desc}</p><strong>{item.high}/{item.low}</strong><small>{item.tip}</small></article>)}
         </div>
       </section>
 
@@ -3771,7 +4546,7 @@ function FarmerWeatherPageMP() {
       </section>
 
       <section className="weather-farm-index">
-        <div className="weather-section-title"><b>🌾 农事指数</b><span>今日建议</span></div>
+        <div className="weather-section-title"><b><img src="/assets/icons/icon-rice.png" alt="" className="fmy-inline-icon" /> 农事指数</b><span>今日建议</span></div>
         {[
           ['适宜追肥', '上午 10 点前或傍晚 18 点后进行，避开高温时段。'],
           ['适宜巡棚', '重点检查番茄棚温度、滴灌阀和通风设备。'],
@@ -3783,13 +4558,48 @@ function FarmerWeatherPageMP() {
 }
 
 function FarmerVoiceAssistantMP() {
+  const [messages, setMessages] = useState<Array<{ role: 'ai' | 'user'; text: string }>>([
+    { role: 'ai', text: '你好，我是露露农事助手。关于种植、病虫害、施肥浇水、天气预报都可以问我，我会给你实用的建议。' }
+  ]);
+  const [draft, setDraft] = useState('');
+  const [isThinking, setIsThinking] = useState(false);
+  const quickPrompts = ['番茄叶子发黄怎么办？', '今天怎么管棚？', '现在适合浇水吗？'];
+  const sendMessage = async (text = draft.trim()) => {
+    if (!text || isThinking) return;
+    setMessages((prev) => [...prev, { role: 'user', text }]);
+    setDraft('');
+    setIsThinking(true);
+    try {
+      const answer = await askAi(text, 'farmer');
+      setMessages((prev) => [...prev, { role: 'ai', text: answer }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: 'ai', text: '露露正在思考时遇到了一点问题，请稍后再试。你也可以查看农事日历、环境监测或联系农技专家。' }]);
+    } finally {
+      setIsThinking(false);
+    }
+  };
   return (
-    <div className="farmer-ai-diagnosis-page farmer-ai-unavailable">
-      <section className="farmer-ai-hero">
-        <div><span>农事服务</span><h2>智能农事助手</h2><p>拍照识别、语音问诊和自动处置建议暂未开通。</p></div>
-        <Bot size={38} />
-      </section>
-      <section className="farmer-ai-unavailable-card"><b>服务尚未接入</b><p>当前页面不读取相机、麦克风或实时农场数据，也不会生成病害诊断。需要农事建议时，请联系当地农技人员核实。</p></section>
+    <div className="farmer-chat-panel farmer-ai-chat-page">
+      <header className="farmer-chat-head">
+        <img className="lulu-avatar mini" src="/assets/miniprogram/ui-v2/ai-lulu.png" alt="露露" />
+        <div><b>露露</b><small><i /> 农事智能助手在线</small></div>
+        <span />
+      </header>
+      <div className="farmer-chat-body">
+        {messages.map((item, index) => (
+          <div key={`${item.role}-${index}`} className={`farmer-chat-bubble ${item.role}`}>
+            <span>{item.text}</span>
+          </div>
+        ))}
+        {isThinking && <div className="farmer-chat-bubble ai thinking"><span>露露正在思考…</span><i /><i /><i /></div>}
+      </div>
+      <div className="farmer-chat-prompts">
+        {quickPrompts.map((item) => <button key={item} onClick={() => sendMessage(item)}>{item}</button>)}
+      </div>
+      <footer className="farmer-chat-input" style={{ gridTemplateColumns: 'minmax(0, 1fr) 54px' }}>
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendMessage(); }} placeholder="问我农事、病虫害、设备、天气..." />
+        <button className={`send ${draft.trim() ? 'active' : ''}`} onClick={() => sendMessage()}>发送</button>
+      </footer>
     </div>
   );
 }
@@ -3816,8 +4626,12 @@ function FarmerSubPage({ page, onBack, onPage }: { page: FarmerPage; onBack: () 
     locationMap: '基地地图',
     community: '农友社区',
     farmerSettings: '设置',
+    farmerGeneral: '通用设置',
+    farmerAddress: '收货地址',
+    farmerPrivacy: '账户数据与隐私',
     farmerOrders: '订单管理',
-    farmerOrderDetail: '订单详情'
+    farmerOrderDetail: '订单详情',
+    myOrders: '我的工单'
   };
 
   return (
@@ -3872,7 +4686,7 @@ function FarmerCropDetailPage() {
   return (
     <>
       <section className="farmer-v2-crop-detail">
-        <div className="farmer-v2-crop-icon big">🍅</div>
+        <div className="farmer-v2-crop-icon big"><img src="/assets/icons/icon-tomato.png" alt="" /></div>
         <div><span>1号智能棚</span><h2>阳光小番茄</h2><p>开花坐果期 · 健康状态优</p></div>
         <strong>76%</strong>
       </section>
@@ -4123,6 +4937,10 @@ function ConsumerSubPage({
   onSelectOrder,
   onCheckout,
   onPay,
+  onPayOrder,
+  onCancelOrder,
+  onEditProfile,
+  onProfileChanged,
   notify,
   onLogout,
   onIdentity,
@@ -4140,16 +4958,17 @@ function ConsumerSubPage({
   category,
   setCategory,
   onProductSelected,
-  onTraceResult
+  onTraceResult,
+  adopts
 }: {
   page: ConsumerPage;
   product: Product;
   cartItems: CartItem[];
   onBack: () => void;
   onPage: (page: ConsumerPage) => void;
-  onAddCart: (product: Product, spec: string) => void;
-  onUpdateCartQuantity: (productId: number, spec: string, nextQuantity: number) => void;
-  onRemoveCartItem: (productId: number, spec: string) => void;
+  onAddCart: (product: Product, spec: string) => void | Promise<void>;
+  onUpdateCartQuantity: (productId: string, spec: string, nextQuantity: number) => void;
+  onRemoveCartItem: (productId: string, spec: string) => void;
   addresses: Address[];
   selectedAddress: Address | null;
   onSelectAddress: (address: Address | null) => void;
@@ -4159,6 +4978,10 @@ function ConsumerSubPage({
   onSelectOrder: (order: OrderRecord | null) => void;
   onCheckout: () => void;
   onPay: () => Promise<void>;
+  onPayOrder: (order: OrderRecord) => void;
+  onCancelOrder: (order: OrderRecord) => Promise<void>;
+  onEditProfile: () => void;
+  onProfileChanged: () => void;
   notify: (message: string) => void;
   onLogout: () => void;
   onIdentity: () => void;
@@ -4167,16 +4990,17 @@ function ConsumerSubPage({
   safeProduct: (idx: number) => Product;
   traceTimeline: TraceStep[];
   products: Product[];
-  categories: AppCategory[];
+  categories: RawCategory[];
   productError: string;
   productSource: ApiDataSource;
   categorySource: ApiDataSource;
   canPurchase: boolean;
   onCartTab: () => void;
-  category: CategoryId;
-  setCategory: (category: CategoryId) => void;
+  category: string;
+  setCategory: (category: string) => void;
   onProductSelected: (product: Product) => void;
   onTraceResult: (result: { events: TraceStep[] }) => void;
+  adopts: AdoptItem[];
 }) {
   const titles: Record<Exclude<ConsumerPage, 'tabs'>, string> = {
     mall: '商品分类',
@@ -4192,36 +5016,158 @@ function ConsumerSubPage({
     service: '客服中心',
     settings: '设置',
     privacy: '账户数据说明',
+    general: '通用设置',
+    member: '会员中心',
+    favorites: '我的收藏',
+    footprints: '浏览足迹',
     adoptDetail: '认养详情',
     adoptConfirm: '确认认养',
     adoptSuccess: '认养成功',
-    traceResult: '溯源结果'
+    traceResult: '溯源结果',
+    region: '收货地区',
+    regionContent: '切换推荐地区'
   };
+
+  const [selectedAdopt, setSelectedAdopt] = useState<AdoptItem | null>(null);
+  const [adoptOrderNo, setAdoptOrderNo] = useState('');
+  const [adoptPlacing, setAdoptPlacing] = useState(false);
+
+  useEffect(() => {
+    if (page === 'adoptDetail' && !selectedAdopt && adopts.length > 0) {
+      setSelectedAdopt(adopts[0]);
+    }
+  }, [page, adopts, selectedAdopt]);
+
+  const placeAdoptOrder = async () => {
+    if (!selectedAdopt) return;
+    if (!selectedAddress) { notify('请先选择收货地址'); return; }
+    setAdoptPlacing(true);
+    try {
+      const result = await createAdoptionOrder(selectedAdopt.id, selectedAddress.detailAddress || selectedAddress.city, '');
+      setAdoptOrderNo(result.adoptionNo || result.adoptionId);
+      onPage('adoptSuccess');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '认养下单失败');
+    } finally {
+      setAdoptPlacing(false);
+    }
+  };
+
+  // 通用设置从「设置」页进入，返回时回到设置页，避免直接跳回首页
+  const handleBack = page === 'general' ? () => onPage('settings') : onBack;
 
   return (
     <div className="sub-page-red">
       <header className="sub-nav-red">
-        <button className="sub-back-visible" onClick={onBack} aria-label="返回"><ChevronLeft size={18} />返回</button>
+        <button className="sub-back-visible" onClick={handleBack} aria-label="返回"><ChevronLeft size={18} />返回</button>
         <strong>{titles[page as Exclude<ConsumerPage, 'tabs'>]}</strong>
         <span />
       </header>
       <div className="sub-content-red">
-        {page === 'mall' && <Mall category={category} setCategory={setCategory} categories={categories} products={products} productError={productError} source={productSource} categorySource={categorySource} canPurchase={canPurchase} notify={notify} onAddCart={(item) => onAddCart(item, item.unit)} onProduct={onProductSelected} />}
+        {page === 'mall' && <Mall category={category} setCategory={setCategory} categories={categories} products={products} productError={productError} source={productSource} categorySource={categorySource} canPurchase={canPurchase} notify={notify} onAddCart={(item) => onAddCart(item, item.unit)} onProduct={onProductSelected} onOpenCart={onCartTab} onBack={onBack} />}
         {page === 'trace' && <Trace onResult={() => onPage('traceResult')} notify={notify} traceTimeline={traceTimeline} safeProduct={safeProduct} onTraceResult={onTraceResult} />}
-        {page === 'productDetail' && <ProductDetail product={product} canPurchase={canPurchase} notify={notify} onCart={onCartTab} onTrace={() => onPage('trace')} onAddCart={onAddCart} onBuy={() => onCartTab()} />}
+        {page === 'productDetail' && <ProductDetail product={product} canPurchase={canPurchase} notify={notify} onCart={onCartTab} onTrace={() => onPage('trace')} onAddCart={onAddCart} onBuy={() => onCheckout()} />}
         {page === 'cart' && <CartPage cartItems={cartItems} onCheckout={onCheckout} onShop={() => onPage('tabs')} onUpdateQuantity={onUpdateCartQuantity} onRemove={onRemoveCartItem} />}
         {page === 'checkout' && <CheckoutPage cartItems={cartItems} address={selectedAddress} onPay={onPay} onAddress={() => onPage('address')} />}
         {page === 'paySuccess' && <PaySuccessPage onOrders={() => onPage('orders')} onDetail={() => onPage('orderDetail')} />}
-        {page === 'orders' && <OrdersPage orders={orders} loggedIn={loggedIn} onLogin={onLogin} notify={notify} onDetail={(order) => { onSelectOrder(order); onPage('orderDetail'); }} />}
-        {page === 'orderDetail' && <OrderDetailPage order={activeOrder} />}
+        {page === 'orders' && <OrdersPage orders={orders} loggedIn={loggedIn} onLogin={onLogin} notify={notify} onDetail={(order) => { onSelectOrder(order); onPage('orderDetail'); }} onPayOrder={(order) => { onSelectOrder(order); onPayOrder(order); }} />}
+        {page === 'orderDetail' && <OrderDetailPage order={activeOrder} onPayOrder={onPayOrder} onCancelOrder={onCancelOrder} />}
         {page === 'address' && <AddressPage addresses={addresses} selectedAddress={selectedAddress} onSelect={onSelectAddress} onChanged={onAddressesChanged} notify={notify} />}
         {page === 'messages' && <MessagesPage onPage={onPage} />}
         {page === 'service' && <ServicePage onOrders={() => onPage('orders')} />}
-        {page === 'settings' && <SettingsPage loggedIn={loggedIn} onLogout={onLogout} onIdentity={onIdentity} onLogin={onLogin} onPrivacy={() => onPage('privacy')} />}
+        {page === 'settings' && <SettingsPage loggedIn={loggedIn} onLogout={onLogout} onIdentity={onIdentity} onLogin={onLogin} onPrivacy={() => onPage('privacy')} onOpenGeneral={() => onPage('general')} onEditProfile={onEditProfile} onAddress={() => onPage('address')} notify={notify} onProfileChanged={onProfileChanged} />}
+        {page === 'general' && <GeneralSettingsPage onBack={() => onPage('settings')} notify={notify} />}
         {page === 'privacy' && <PrivacyPage />}
-        {page === 'adoptDetail' && <div className="mp-adopt-detail"><img src="/assets/miniprogram/hero-farm.jpg" alt=""/><span>体验样板 · 场景示意</span><h2>和一季新鲜，慢慢相遇</h2><p>当前展示的是图文体验样板，没有真实农场、认养交易、作物实时状态或配送服务。</p><button onClick={() => onPage('adoptConfirm')}>查看服务状态</button></div>}
-        {page === 'adoptConfirm' && <div className="mp-trace-unavailable"><img src="/assets/miniprogram/farmer-icons/plant.png" alt=""/><h2>认养服务尚未开通</h2><p>当前仅支持浏览与本机关注体验项目，不会创建认养订单或收取费用。</p></div>}
-        {page === 'adoptSuccess' && <div className="mp-trace-unavailable"><h2>没有认养订单</h2><p>认养服务尚未开通，页面样板不会生成成功订单。</p></div>}
+        {page === 'member' && <MemberPage onBack={onBack} notify={notify} />}
+        {page === 'favorites' && <FavoritesPage onBack={onBack} notify={notify} />}
+        {page === 'footprints' && <FootprintsPage onBack={onBack} />}
+        {page === 'region' && <RegionPage onBack={onBack} onManageAddress={() => onPage('address')} notify={notify} />}
+        {page === 'regionContent' && <RegionContentPage onBack={onBack} notify={notify} />}
+        {page === 'adoptDetail' && (
+          <div className="adopt-detail-red adopt-detail-pro">
+            <section className="adopt-detail-hero">
+              <img src={selectedAdopt?.image || '/assets/farm/greenhouse.jpg'} alt="" />
+              <div>
+                <span>云认养农场</span>
+                <h2>{selectedAdopt?.name || '认养方案'}</h2>
+                <p>{selectedAdopt?.stage || '认养后由农场主定期更新生长记录'}</p>
+              </div>
+            </section>
+            <section className="adopt-owner-card adopt-rights-card">
+              <div className="trace-section-head"><b>认养后你会得到</b><span>一季权益</span></div>
+              <div>
+                <span>专属认养牌</span>
+                <span>每周成长照片</span>
+                <span>采收后寄到家</span>
+                <span>坏果优先补发</span>
+              </div>
+            </section>
+            <section className="adopt-owner-card">
+              <div className="trace-section-head"><b>方案说明</b></div>
+              <p>{selectedAdopt?.output || '暂无方案说明'}</p>
+              <p>认养周期：{selectedAdopt?.period || '—'}</p>
+            </section>
+            {adopts.length > 0 && (
+              <section className="adopt-photo-strip">
+                <div className="trace-section-head"><b>其他认养方案</b><span>共 {adopts.length} 个</span></div>
+                <div className="adopt-options-row">
+                  {adopts.map((item) => (
+                    <button key={item.id} className={selectedAdopt?.id === item.id ? 'active' : ''} onClick={() => setSelectedAdopt(item)}>
+                      <img src={item.image} alt="" />
+                      <b>{item.name}</b>
+                      <span>¥{item.price.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+            <section className="adopt-bottom-action">
+              <div><span>一季认养</span><b>¥{selectedAdopt ? selectedAdopt.price.toFixed(2) : '0.00'}</b></div>
+              <button onClick={() => onPage('adoptConfirm')}>确认认养</button>
+            </section>
+          </div>
+        )}
+        {page === 'adoptConfirm' && (
+          <div className="adopt-confirm-page">
+            <section className="adopt-confirm-hero">
+              <img src={selectedAdopt?.image || '/assets/farm/greenhouse.jpg'} alt="" />
+              <div>
+                <span>云认养农场</span>
+                <h2>{selectedAdopt?.name || '认养方案'}</h2>
+                <p>{selectedAdopt?.output || ''}</p>
+              </div>
+            </section>
+            <section className="adopt-confirm-card">
+              <h3>认养权益</h3>
+              {['专属认养牌', '每周成长照片', '采收后包邮到家', '坏果优先补发'].map((item) => (
+                <p key={item}><CheckCircle2 size={16} /><span>{item}</span></p>
+              ))}
+            </section>
+            <section className="adopt-confirm-card">
+              <h3>收获寄送</h3>
+              <button onClick={() => onPage('address')}><MapPin size={17} /><span>{selectedAddress ? `${selectedAddress.name} ${selectedAddress.phone}<br/>${selectedAddress.detailAddress}` : '请选择收货地址'}</span><ChevronRight size={16} /></button>
+            </section>
+            <section className="adopt-confirm-card adopt-pay-summary">
+              <p><span>认养金额</span><b>¥{selectedAdopt ? selectedAdopt.price.toFixed(2) : '0.00'}</b></p>
+              <p><span>平台保障</span><b>免费</b></p>
+              <p><span>实付</span><strong>¥{selectedAdopt ? selectedAdopt.price.toFixed(2) : '0.00'}</strong></p>
+            </section>
+            <div className="adopt-confirm-bottom"><span>实付 <b>¥{selectedAdopt ? selectedAdopt.price.toFixed(2) : '0.00'}</b></span><button onClick={placeAdoptOrder} disabled={adoptPlacing}>{adoptPlacing ? '提交中…' : '支付认养'}</button></div>
+          </div>
+        )}
+        {page === 'adoptSuccess' && (
+          <div className="adopt-success-page">
+            <CheckCircle2 size={54} />
+            <h2>认养成功</h2>
+            <p>你的专属农场已建档，农场主将在每周同步成长照片。</p>
+            <section>
+              <span>认养编号</span><b>{adoptOrderNo || '—'}</b>
+              <span>认养方案</span><b>{selectedAdopt?.name || '—'}</b>
+              <span>认养金额</span><b>¥{selectedAdopt ? selectedAdopt.price.toFixed(2) : '0.00'}</b>
+            </section>
+            <div><button onClick={() => onPage('tabs')}>回到首页</button><button className="primary" onClick={() => onPage('adoptDetail')}>查看农场</button></div>
+          </div>
+        )}
         {page === 'traceResult' && <TraceResultPage product={product} traceTimeline={traceTimeline} />}
       </div>
     </div>
@@ -4241,7 +5187,7 @@ function ProductDetail({
   canPurchase: boolean;
   onCart: () => void;
   onTrace: () => void;
-  onAddCart: (product: Product, spec: string) => void;
+  onAddCart: (product: Product, spec: string) => void | Promise<void>;
   onBuy: () => void;
   notify: (message: string) => void;
 }) {
@@ -4254,7 +5200,6 @@ function ProductDetail({
     { name: `家庭装 ${product.unit}`, desc: '家庭囤货更划算' },
     { name: '尝鲜装', desc: '新人首单推荐' }
   ];
-  return <div className="mp-product-detail"><img className="mp-product-image" src={product.image} alt=""/><section><h1>{product.name}</h1><p>{product.origin || '产地信息待补充'}{product.unit ? ` · ${product.unit}` : ''}</p>{canPurchase && product.price > 0 ? <strong>¥{product.price}</strong> : <em>待上架 · 商品资料预览</em>}</section><section className="mp-product-note"><b>商品信息</b><p>{product.description || '当前展示商品基础资料。供货、检测、溯源及配送信息以服务端实际接入内容为准。'}</p><small>批次追溯服务尚未开放</small></section><section className="mp-product-actions"><button onClick={onCart}>购物车</button><button disabled={!canPurchase} onClick={() => { if (canPurchase) { onAddCart(product, spec); setAdded(true); window.setTimeout(() => setAdded(false), 1200); } }}>{canPurchase ? added ? '已加入' : '加入购物车' : '暂不可购买'}</button></section></div>;
   const detailPoints = [
     { label: '发货地', value: product.origin },
     { label: '预计到达', value: '明日 18:00 前' },
@@ -4269,9 +5214,13 @@ function ProductDetail({
     window.setTimeout(() => setAdded(false), 1200);
   };
 
-  const buyNow = () => {
+  const buyNow = async () => {
     if (!canPurchase) { notify('商品资料预览，交易服务尚未接入'); return; }
-    onAddCart(product, spec);
+    try {
+      await onAddCart(product, spec);
+    } catch {
+      return;
+    }
     onBuy();
   };
 
@@ -4293,7 +5242,6 @@ function ProductDetail({
         <h1>{product.name} {product.unit}</h1>
         <div className="detail-tags"><span>百亿农补</span><span>{product.tag}</span><span>{product.origin}</span></div>
         <div className="detail-buyer-row">
-          <span>12分钟前 赵** 拼单成功</span>
           <span>同城 24 小时内达</span>
         </div>
       </section>
@@ -4344,13 +5292,8 @@ function ProductDetail({
       </section>
 
       <section className="detail-card detail-review-card">
-        <div className="trace-section-head"><b>买家真实评价</b><span>好评率 98.6%</span></div>
-        <div className="review-score-row">
-          <strong>4.9</strong>
-          <span><Star size={14} fill="currentColor" /> 新鲜度高 · 发货快 · 可溯源</span>
-        </div>
-        <p>“包装很扎实，口感比超市买的新鲜，扫码能看到采摘和检测记录，给家里老人买也放心。”</p>
-        <div><span>复购 3 次</span><span>物流很快</span><span>新鲜度高</span></div>
+        <div className="trace-section-head"><b>买家真实评价</b><span>真实评价待接入</span></div>
+        <p>真实评价与评分数据待接入，接入后将展示真实买家评价。</p>
       </section>
 
       <section className="detail-card">
@@ -4386,8 +5329,8 @@ function CartPage({
   cartItems: CartItem[];
   onCheckout: () => void;
   onShop: () => void;
-  onUpdateQuantity: (productId: number, spec: string, nextQuantity: number) => void;
-  onRemove: (productId: number, spec: string) => void;
+  onUpdateQuantity: (productId: string, spec: string, nextQuantity: number) => void;
+  onRemove: (productId: string, spec: string) => void;
 }) {
   const total = cartItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const discount = 0;
@@ -4466,7 +5409,7 @@ function CheckoutPage({
         <ChevronRight size={17} />
       </section>
       <section className="checkout-shop-red">
-        <h3>小满合产地店</h3>
+        <h3>耘露产地店</h3>
         {cartItems.map((item) => (
           <div className="checkout-product-red" key={`${item.product.id}-${item.spec}`}>
             <img src={item.product.image} alt="" />
@@ -4485,6 +5428,137 @@ function CheckoutPage({
   );
 }
 
+function ProfileEditPage({ role, onClose, notify }: { role: Role; onClose: () => void; notify: (message: string) => void }) {
+  const [loading, setLoading] = useState(true);
+  const [nickname, setNickname] = useState('');
+  const [gender, setGender] = useState<number>(0);
+  const [birthday, setBirthday] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const isFarmer = role === 'farmer';
+
+  useEffect(() => {
+    let alive = true;
+    fetchCurrentUser().then((u) => {
+      if (!alive) return;
+      setNickname(u.nickname || '');
+      setGender(u.gender ?? 0);
+      setBirthday(u.birthday || '');
+      setAvatar(u.avatar || '');
+    }).catch(() => {}).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const pickAvatar = () => fileRef.current?.click();
+  const onFile = async (event: { target: { files: FileList | null; value: string } }) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { notify('请选择图片文件'); return; }
+    if (file.size > 5 * 1024 * 1024) { notify('图片不能超过 5MB'); return; }
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const result = await uploadImageBase64(file.type, base64);
+      if (result.url) { setAvatar(imageURL(result.url)); notify('头像已更新，保存后生效'); }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '头像上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const save = async () => {
+    const name = nickname.trim();
+    if (!name) { notify('请填写昵称'); return; }
+    if (name.length > 20) { notify('昵称不超过 20 个字'); return; }
+    setSaving(true);
+    try {
+      const body: { nickname: string; gender: number; birthday?: string; avatar?: string } = { nickname: name, gender, ...(birthday ? { birthday } : {}) };
+      if (avatar) body.avatar = avatar;
+      await updateProfile(body);
+      notify('保存成功');
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="profile-edit-overlay">
+      <header className="pe-nav">
+        <button className="pe-back" onClick={onClose} aria-label="返回"><ChevronLeft size={20} /></button>
+        <b>个人信息</b>
+        <span className="pe-nav-holder" />
+      </header>
+      <div className="pe-body">
+        {loading ? (
+          <p className="pe-loading">正在读取个人信息…</p>
+        ) : (
+          <>
+            <section className="pe-card pe-avatar-card">
+              <div className="pe-avatar">
+                {avatar ? <img src={avatar} alt="头像" /> : <img src="/assets/brand-logo.png" alt="默认头像" />}
+              </div>
+              <button className="pe-change-avatar" disabled={uploading} onClick={pickAvatar}>{uploading ? '上传中…' : '更换头像'}</button>
+              <p className="pe-tip">点击选择图片，可更新头像（≤5MB）</p>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onFile} />
+            </section>
+            <section className="pe-card pe-form">
+              <div className="pe-field">
+                <label>昵称</label>
+                <input value={nickname} maxLength={20} placeholder="请输入昵称" onChange={(e) => setNickname(e.target.value)} />
+                <em>{nickname.length}/20</em>
+              </div>
+              <div className="pe-field pe-field-row">
+                <label>性别</label>
+                <div className="pe-genders">
+                  {([['1', '男'], ['2', '女'], ['0', '保密']] as Array<[string, string]>).map(([val, label]) => (
+                    <button key={val} className={gender === Number(val) ? 'active' : ''} onClick={() => setGender(Number(val))}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="pe-field pe-field-row">
+                <label>出生日期</label>
+                <input type="date" value={birthday} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBirthday(e.target.value)} />
+                <em className="pe-badge">{birthday ? '已设置' : '未设置'}</em>
+              </div>
+            </section>
+            <p className="pe-hint">{isFarmer ? '资料将同步到农户端与消费端' : '资料将同步到你的账户，用于订单与配送'}</p>
+          </>
+        )}
+      </div>
+      <footer className="pe-footer">
+        <button disabled={saving || uploading || loading} onClick={save}>{saving ? '保存中…' : '保存'}</button>
+      </footer>
+    </div>
+  );
+}
+
+function PaySheet({ amount, busy, onClose, onPay }: { amount: number; busy: string | null; onClose: () => void; onPay: (method: 'wechat' | 'alipay') => void }) {
+  return (
+    <div className="pay-sheet-mask" onClick={onClose}>
+      <section className="pay-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="pay-sheet-head"><b>收银台</b><button onClick={onClose}>×</button></div>
+        <div className="pay-amount"><span>应付金额</span><strong>¥{amount}</strong></div>
+        <button className="pay-method" disabled={Boolean(busy)} onClick={() => onPay('wechat')}>微信支付</button>
+        <button className="pay-method" disabled={Boolean(busy)} onClick={() => onPay('alipay')}>支付宝</button>
+        <small className="pay-tip">测试环境模拟支付，不产生真实扣款</small>
+      </section>
+    </div>
+  );
+}
+
 function PaySuccessPage({ onOrders, onDetail }: { onOrders: () => void; onDetail: () => void }) {
   return (
     <div className="pay-success-red">
@@ -4496,7 +5570,7 @@ function PaySuccessPage({ onOrders, onDetail }: { onOrders: () => void; onDetail
   );
 }
 
-function OrdersPage({ orders, loggedIn, onLogin, onDetail, notify: _notify }: { orders: OrderRecord[]; loggedIn: boolean; onLogin: () => void; onDetail: (order: OrderRecord) => void; notify: (message: string) => void }) {
+function OrdersPage({ orders, loggedIn, onLogin, onDetail, onPayOrder, notify: _notify }: { orders: OrderRecord[]; loggedIn: boolean; onLogin: () => void; onDetail: (order: OrderRecord) => void; onPayOrder: (order: OrderRecord) => void; notify: (message: string) => void }) {
   const [status, setStatus] = useState<'all' | 'unpaid' | 'unsent' | 'receiving' | 'done'>('all');
   const tabs = [
     { id: 'all', label: '全部' },
@@ -4532,11 +5606,13 @@ function OrdersPage({ orders, loggedIn, onLogin, onDetail, notify: _notify }: { 
       {loggedIn && !visibleOrders.length && <section className="empty-state-red"><PackageSearch size={42} /><h3>还没有相关订单</h3><p>去挑选一份当季新鲜吧</p></section>}
       {visibleOrders.map((item) => (
         <article className="order-card-red" key={item.order.id}>
-          <div className="order-head-red"><b>小满合产地店</b><span>{item.label}</span></div>
+          <div className="order-head-red"><b>耘露产地店</b><span>{item.label}</span></div>
           <div className="order-body-red"><img src={item.product?.image || ''} alt="" /><div><h3>{item.product?.name || '订单商品'}</h3><p>{item.product ? `数量 x ${item.product.quantity}` : ''}</p><strong>¥{item.order.totalAmount}</strong><small>订单号 {item.order.orderNo}</small></div></div>
           <div className="order-actions-red">
             <button onClick={() => onDetail(item.order)}>订单详情</button>
-            <button className="primary" onClick={() => onDetail(item.order)}>查看订单</button>
+            {item.order.status === 'pending'
+              ? <button className="primary" onClick={() => onPayOrder(item.order)}>去支付</button>
+              : <button className="primary" onClick={() => onDetail(item.order)}>查看订单</button>}
           </div>
         </article>
       ))}
@@ -4544,7 +5620,7 @@ function OrdersPage({ orders, loggedIn, onLogin, onDetail, notify: _notify }: { 
   );
 }
 
-function OrderDetailPage({ order }: { order: OrderRecord | null }) {
+function OrderDetailPage({ order, onPayOrder, onCancelOrder }: { order: OrderRecord | null; onPayOrder: (order: OrderRecord) => void; onCancelOrder: (order: OrderRecord) => Promise<void> }) {
   const product = order?.items[0];
   const statusLabel: Record<string, string> = { pending: '待付款', paid: '待发货', shipped: '待收货', completed: '交易成功', cancelled: '已取消', refunding: '退款中', refunded: '已退款' };
   return (
@@ -4555,6 +5631,12 @@ function OrderDetailPage({ order }: { order: OrderRecord | null }) {
         <h3>商品信息</h3>
         {product && <div className="checkout-product-red"><img src={product.image} alt="" /><div><b>{product.name}</b><p>数量 x {product.quantity}</p><span>¥{product.price}</span></div></div>}
       </section>
+      {order?.status === 'pending' && (
+        <div className="order-actions-red">
+          <button onClick={() => onCancelOrder(order)}>取消订单</button>
+          <button className="primary" onClick={() => onPayOrder(order)}>去支付</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -4608,39 +5690,620 @@ function AddressPage({ addresses, selectedAddress, onSelect, onChanged, notify }
 }
 
 function MessagesPage({ onPage }: { onPage: (page: ConsumerPage) => void }) {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchConversations().then((r) => { if (alive) { setConversations(r.items); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const openChat = async (c: Conversation) => {
+    setOpenId(c.id);
+    const list = await fetchConversationMessages(c.id);
+    setMsgs(list);
+  };
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || !openId || sending) return;
+    setDraft('');
+    setSending(true);
+    try {
+      const { user, reply } = await sendConversationMessage(openId, text);
+      setMsgs((prev) => [...prev, user, ...(reply ? [reply] : [])]);
+    } catch {
+      setMsgs((prev) => [...prev, { id: '', sender: 'user', content: text, createdAt: '' }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="messages-red mp-unavailable-page">
       <section className="mp-unavailable-intro"><b>消息中心</b><span>订单与农场更新</span></section>
-      <section className="empty-state-red"><MessageCircle size={34}/><h3>通知服务暂未开通</h3><p>开通后，订单通知和认养更新将在这里展示。</p></section>
-      <section className="mp-shortcut-card"><button onClick={() => onPage('orders')}>查看我的订单 <ChevronRight size={17}/></button><button onClick={() => onPage('adoptDetail')}>查看我的认养 <ChevronRight size={17}/></button></section>
+      {!openId ? (
+        <>
+          {loading && <p className="empty-state-red" style={{ padding: '16px' }}>加载中…</p>}
+          {!loading && conversations.length === 0 && <section className="empty-state-red"><MessageCircle size={34}/><h3>暂无消息</h3><p>订单通知和认养更新会在这里展示。</p></section>}
+          <section className="mp-shortcut-card">
+            {conversations.map((c) => (
+              <button key={c.id} onClick={() => openChat(c)}>
+                <span>{c.peerName || '客服'}</span>
+                <small>{c.lastMessage}</small>
+                {c.unreadCount > 0 && <em>{c.unreadCount}</em>}
+                <ChevronRight size={17}/>
+              </button>
+            ))}
+            <button onClick={() => onPage('orders')}>查看我的订单 <ChevronRight size={17}/></button>
+            <button onClick={() => onPage('adoptDetail')}>查看我的认养 <ChevronRight size={17}/></button>
+          </section>
+        </>
+      ) : (
+        <section className="mp-chat-room">
+          <div className="mp-chat-head"><button onClick={() => setOpenId(null)}>‹ 返回</button><b>{conversations.find((c) => c.id === openId)?.peerName || '对话'}</b></div>
+          <div className="mp-chat-body">
+            {msgs.map((m) => <div key={m.id || `${m.sender}-${m.createdAt}`} className={`mp-chat-bubble ${m.sender}`}><span>{m.content}</span></div>)}
+          </div>
+          <footer className="mp-chat-input">
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} placeholder="输入消息…" />
+            <button onClick={send} disabled={sending}>{sending ? '发送中' : '发送'}</button>
+          </footer>
+        </section>
+      )}
     </div>
   );
 }
 
 function ServicePage({ onOrders }: { onOrders: () => void }) {
+  const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchSupportHistory().then((list) => { if (alive) { setMessages(list); setLoaded(true); } }).catch(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, []);
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setDraft('');
+    setSending(true);
+    try {
+      const { user, reply } = await sendSupportMessage(text);
+      setMessages((prev) => [...prev, user, ...(reply ? [reply] : [])]);
+    } catch {
+      setMessages((prev) => [...prev, { id: '', role: 'user', content: text, createdAt: '' }]);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="service-red mp-unavailable-page">
-      <section className="mp-unavailable-intro"><b>服务与帮助</b><span>人工客服服务暂未开通</span></section>
-      <section className="empty-state-red"><MessageCircle size={34}/><h3>客服服务暂未开通</h3><p>当前无法创建咨询或售后工单。订单相关信息可在订单页面查看。</p><button onClick={onOrders}>查看我的订单</button></section>
+      <section className="mp-unavailable-intro"><b>服务与帮助</b><span>在线客服</span></section>
+      {loaded && messages.length === 0 && <section className="empty-state-red"><MessageCircle size={34}/><h3>欢迎咨询</h3><p>输入你的问题，客服会尽快回复。</p></section>}
+      <section className="mp-chat-room">
+        <div className="mp-chat-body">
+          {messages.map((m) => <div key={m.id || `${m.role}-${m.createdAt}`} className={`mp-chat-bubble ${m.role === 'user' ? 'user' : 'peer'}`}><span>{m.content}</span></div>)}
+        </div>
+        <footer className="mp-chat-input">
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(); }} placeholder="输入你的问题…" />
+          <button onClick={send} disabled={sending}>{sending ? '发送中' : '发送'}</button>
+        </footer>
+      </section>
+      <section className="mp-shortcut-card"><button onClick={onOrders}>查看我的订单 <ChevronRight size={17}/></button></section>
     </div>
   );
 }
 
-function SettingsPage({ loggedIn, onLogout, onIdentity, onLogin, onPrivacy }: { loggedIn: boolean; onLogout: () => void; onIdentity: () => void; onLogin: () => void; onPrivacy: () => void }) {
+function SettingsPage({ loggedIn, onLogout, onIdentity, onLogin, onPrivacy, onOpenGeneral, onEditProfile, onAddress, notify, onProfileChanged }: { loggedIn: boolean; onLogout: () => void; onIdentity: () => void; onLogin: () => void; onPrivacy: () => void; onOpenGeneral?: () => void; onEditProfile?: () => void; onAddress?: () => void; notify?: (message: string) => void; onProfileChanged?: () => void }) {
+  const [session] = useState(() => getStoredSession());
+  const [city, setCity] = useState(session?.city || '');
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [citySheet, setCitySheet] = useState(false);
+  const [fontSheet, setFontSheet] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [faqs, setFaqs] = useState<Faq[]>([]);
+  const [savingCity, setSavingCity] = useState(false);
+  const [feedback, setFeedback] = useState({ type: 'suggest', content: '', contact: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const displayName = session?.nickname?.trim() || '未登录';
+  const CITIES = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '昆明'];
+  const FONT_LABEL: Record<number, string> = { 1: '小', 2: '标准', 3: '大' };
+
+  useEffect(() => {
+    let alive = true;
+    fetchUserSettings().then((s) => { if (alive) setSettings(s); }).catch(() => { if (alive) setSettings({ orderNotify: true, logisticsNotify: true, promoNotify: true, communityNotify: true, personalizedRecommend: true, footprintVisible: true, voiceEnabled: false, dataSaver: false, fontScale: 2 }); });
+    return () => { alive = false; };
+  }, []);
+
+  const togglePref = async (key: 'voiceEnabled' | 'dataSaver') => {
+    if (!settings) return;
+    const next = !settings[key];
+    const prev = settings;
+    setSettings({ ...settings, [key]: next });
+    try { setSettings(await updateUserSettings({ [key]: next })); } catch { setSettings(prev); notify?.('保存失败，请稍后重试'); }
+  };
+  const chooseFont = async (scale: number) => {
+    setFontSheet(false);
+    if (!settings || scale === settings.fontScale) return;
+    const prev = settings;
+    setSettings({ ...settings, fontScale: scale });
+    try { setSettings(await updateUserSettings({ fontScale: scale })); notify?.('字体大小已更新'); } catch { setSettings(prev); notify?.('保存失败，请稍后重试'); }
+  };
+  const chooseCity = async (c: string) => {
+    setCitySheet(false);
+    if (savingCity || c === city) return;
+    setSavingCity(true);
+    try {
+      await updateProfile({ city: c });
+      setCity(c);
+      notify?.('城市已更新');
+      onProfileChanged?.();
+    } catch (error) {
+      notify?.(error instanceof Error ? error.message : '城市保存失败');
+    } finally {
+      setSavingCity(false);
+    }
+  };
+  const openHelp = () => {
+    setHelpOpen(true);
+    fetchFaqs().then(setFaqs).catch(() => {});
+  };
+  const submit = async () => {
+    const content = feedback.content.trim();
+    if (!content) { notify?.('请填写反馈内容'); return; }
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await submitFeedback(feedback.type, content, feedback.contact.trim());
+      setFeedbackOpen(false);
+      setFeedback({ type: 'suggest', content: '', contact: '' });
+      notify?.('感谢你的反馈');
+    } catch (error) {
+      notify?.(error instanceof Error ? error.message : '提交失败，请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const Toggle = ({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) => (
+    <button className={`st-toggle ${on ? 'on' : ''}`} onClick={() => onChange(!on)} aria-label="开关"><i /></button>
+  );
+
   return (
-    <div className="settings-red mp-settings-page">
-      <section className="mp-shortcut-card">
-        <button onClick={onPrivacy}><span>账户数据与隐私说明</span><ChevronRight size={17}/></button>
-        <button onClick={onIdentity}><span>切换使用身份</span><ChevronRight size={17}/></button>
+    <div className="settings-red mp-settings-page st-page">
+      <section className="st-group">
+        <div className="st-group-title">个人信息</div>
+        <button className="st-row" disabled={!loggedIn} onClick={onEditProfile}>
+          <span className="st-icon"><img src="/assets/icons/user.png" alt="" /></span><span className="st-label">昵称</span>
+          <em>{loggedIn ? displayName : '未登录'}</em><ChevronRight size={16} />
+        </button>
+        <button className="st-row" disabled={!loggedIn} onClick={() => setCitySheet(true)}>
+          <span className="st-icon"><img src="/assets/icons/pin.png" alt="" /></span><span className="st-label">城市</span>
+          <em className={city ? '' : 'st-placeholder'}>{city || '未设置'}</em><ChevronRight size={16} />
+        </button>
       </section>
-      {loggedIn ? <button className="logout-red" onClick={() => { if (window.confirm('本机会话将移除，重新登录后可继续查看订单和地址。')) onLogout(); }}>退出当前账户</button> : <button className="mp-login-button" onClick={onLogin}>登录</button>}
-      <section className="mp-settings-about"><b>小满合</b><span>新鲜农货 · 产品溯源 · 云认养</span></section>
+
+      <section className="st-group">
+        <div className="st-group-title">通用</div>
+        <button className="st-row" onClick={() => setFontSheet(true)}>
+          <span className="st-icon"><img src="/assets/icons/font.png" alt="" /></span><span className="st-label">字体大小</span>
+          <em>{FONT_LABEL[settings?.fontScale ?? 2] || '标准'}</em><ChevronRight size={16} />
+        </button>
+        <div className="st-row">
+          <span className="st-icon"><img src="/assets/icons/voice.png" alt="" /></span><span className="st-label">语音播报</span>
+          <Toggle on={Boolean(settings?.voiceEnabled)} onChange={() => togglePref('voiceEnabled')} />
+        </div>
+        <div className="st-row">
+          <span className="st-icon"><img src="/assets/icons/signal.png" alt="" /></span><span className="st-label">图片省流模式</span>
+          <Toggle on={Boolean(settings?.dataSaver)} onChange={() => togglePref('dataSaver')} />
+        </div>
+      </section>
+
+      <section className="st-group">
+        <div className="st-group-title">通用设置</div>
+        <button className="st-row" onClick={onOpenGeneral}>
+          <span className="st-icon"><img src="/assets/icons/general.png" alt="" /></span><span className="st-label">通用设置</span>
+          <em className="st-placeholder">修改密码 · 消息通知 · 隐私</em><ChevronRight size={16} />
+        </button>
+      </section>
+
+      <section className="st-group">
+        <div className="st-group-title">更多</div>
+        <button className="st-row" onClick={onAddress}>
+          <span className="st-icon"><img src="/assets/icons/truck.png" alt="" /></span><span className="st-label">收货地址</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={onPrivacy}>
+          <span className="st-icon"><img src="/assets/icons/shield.png" alt="" /></span><span className="st-label">账户数据与隐私</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={() => setFeedbackOpen(true)}>
+          <span className="st-icon"><img src="/assets/icons/chat.png" alt="" /></span><span className="st-label">意见反馈</span><ChevronRight size={16} />
+        </button>
+        <button className="st-row" onClick={openHelp}>
+          <span className="st-icon"><img src="/assets/icons/help.png" alt="" /></span><span className="st-label">帮助中心</span><ChevronRight size={16} />
+        </button>
+      </section>
+
+      <section className="st-group">
+        <button className="st-row" onClick={onIdentity}>
+          <span className="st-icon"><img src="/assets/icons/swap.png" alt="" /></span><span className="st-label">切换使用身份</span><ChevronRight size={16} />
+        </button>
+      </section>
+
+      {loggedIn
+        ? <button className="st-logout" onClick={() => { if (window.confirm('本机会话将移除，重新登录后可继续查看订单和地址。')) onLogout(); }}>退出当前账户</button>
+        : <button className="mp-login-button" onClick={onLogin}>登录</button>}
+
+      <section className="mp-settings-about">
+        <img src="/assets/brand-logo.png" alt="耘露" />
+        <b>耘露</b>
+        <span>新鲜农货 · 产品溯源 · 云认养</span>
+        <small>Version 5.0</small>
+      </section>
+
+      {citySheet && createPortal(
+        <div className="st-sheet-mask" onClick={() => setCitySheet(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>选择城市</b><button onClick={() => setCitySheet(false)}>×</button></div>
+            {CITIES.map((c) => (
+              <button key={c} className={`st-sheet-row ${c === city ? 'active' : ''}`} disabled={savingCity} onClick={() => chooseCity(c)}>
+                {c}{c === city && <em>当前</em>}
+              </button>
+            ))}
+            <button className="st-sheet-row" disabled={savingCity} onClick={() => chooseCity('其他')}>其他</button>
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {fontSheet && createPortal(
+        <div className="st-sheet-mask" onClick={() => setFontSheet(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>字体大小</b><button onClick={() => setFontSheet(false)}>×</button></div>
+            {([1, 2, 3] as number[]).map((s) => (
+              <button key={s} className={`st-sheet-row ${settings?.fontScale === s ? 'active' : ''}`} onClick={() => chooseFont(s)}>
+                {FONT_LABEL[s]}{settings?.fontScale === s && <em>当前</em>}
+              </button>
+            ))}
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {feedbackOpen && createPortal(
+        <div className="st-sheet-mask" onClick={() => setFeedbackOpen(false)}>
+          <section className="st-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>意见反馈</b><button onClick={() => setFeedbackOpen(false)}>×</button></div>
+            <div className="st-fb-types">
+              {([['suggest', '建议'], ['bug', '问题'], ['other', '其他']] as Array<[string, string]>).map(([val, label]) => (
+                <button key={val} className={feedback.type === val ? 'active' : ''} onClick={() => setFeedback({ ...feedback, type: val })}>{label}</button>
+              ))}
+            </div>
+            <textarea className="st-fb-text" rows={4} maxLength={1000} placeholder="请描述你的建议或遇到的问题…" value={feedback.content} onChange={(e) => setFeedback({ ...feedback, content: e.target.value })} />
+            <input className="st-fb-contact" placeholder="联系方式（选填）" value={feedback.contact} onChange={(e) => setFeedback({ ...feedback, contact: e.target.value })} />
+            <button className="st-fb-submit" disabled={submitting} onClick={submit}>{submitting ? '提交中…' : '提交反馈'}</button>
+          </section>
+        </div>,
+        document.body
+      )}
+
+      {helpOpen && createPortal(
+        <div className="st-sheet-mask" onClick={() => setHelpOpen(false)}>
+          <section className="st-sheet st-help-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="st-sheet-head"><b>帮助中心</b><button onClick={() => setHelpOpen(false)}>×</button></div>
+            {faqs.length === 0 && <p className="st-help-empty">正在加载常见问题…</p>}
+            {faqs.map((f) => (
+              <div key={f.q} className="st-faq">
+                <b>{f.q}</b>
+                <p>{f.a}</p>
+              </div>
+            ))}
+            <p className="st-help-foot">更多帮助可联系在线客服</p>
+          </section>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 function PrivacyPage() {
-  return <div className="mp-privacy-page"><section><h3>账户数据说明</h3><p>登录时，账户服务会确认身份并返回账户资料和登录会话。会话保存在本机，用于读取购物车、订单与收货地址。退出登录会移除本机会话。</p><h3>查询记录</h3><p>搜索关键词保存在当前设备。小满的商品查询与操作指引记录按本机当前账户分开保存，可以在对话页清除。本页不收集额外身份资料。</p><h3>服务状态</h3><p>商品购买、认养、溯源、人工客服与 AI 对话的可用情况以页面实际提示为准。商品图册不能作为库存、价格、检测或交付证明。</p><h3>授权与联系</h3><p>使用扫码等功能时会请求相应权限，可在系统设置中管理授权。正式对外服务前，经营主体、联系方式、数据保存期限与完整隐私政策应由运营方提供并发布。</p></section></div>;
+  return <div className="mp-privacy-page"><section><h3>账户数据说明</h3><p>登录时，账户服务会确认身份并返回账户资料和登录会话。会话保存在本机，用于读取购物车、订单与收货地址。退出登录会移除本机会话。</p><h3>查询记录</h3><p>搜索关键词保存在当前设备。小露的商品查询与操作指引记录按本机当前账户分开保存，可以在对话页清除。本页不收集额外身份资料。</p><h3>服务状态</h3><p>商品购买、认养、溯源、人工客服与 AI 对话的可用情况以页面实际提示为准。商品图册不能作为库存、价格、检测或交付证明。</p><h3>授权与联系</h3><p>使用扫码等功能时会请求相应权限，可在系统设置中管理授权。正式对外服务前，经营主体、联系方式、数据保存期限与完整隐私政策应由运营方提供并发布。</p></section></div>;
+}
+
+function MemberPage({ onBack, notify }: { onBack: () => void; notify: (message: string) => void }) {
+  const [summary, setSummary] = useState<MemberSummary | null>(null);
+  const [records, setRecords] = useState<PointsRecord[]>([]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchMemberSummary(), fetchPointsRecords(1, 50)]).then(([s, r]) => { if (alive) { setSummary(s); setRecords(r.items); } }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const doCheckin = async () => {
+    try {
+      const r = await checkinMember();
+      notify(r.message || (r.awarded ? `签到成功 +${r.points} 积分` : '今日已签到'));
+      const s = await fetchMemberSummary(); if (s) setSummary(s);
+    } catch (e) { notify(e instanceof Error ? e.message : '签到失败'); }
+  };
+  return (
+    <div className="mp-member-page">
+      <section className="member-hero">
+        <div><b>{summary?.levelName || '青芽会员'}</b><p>当前积分</p><strong>{summary?.points ?? 0}</strong></div>
+        <button onClick={doCheckin}>{summary?.checkedInToday ? '今日已签到' : '立即签到'}</button>
+      </section>
+      <section className="member-progress">
+        <div className="member-progress-head"><span>升级进度</span><em>{summary ? `${summary.progressPercent}%` : '—'}</em></div>
+        <i><span style={{ width: `${summary?.progressPercent ?? 0}%` }} /></i>
+        <small>{summary ? `距下一等级还需 ${summary.pointsToNext} 积分` : '加载中…'}</small>
+      </section>
+      <section className="member-privileges">
+        <b>会员权益</b>
+        {(summary?.privileges || []).map((p) => <article key={p.code}><div><b>{p.title || p.name}</b><small>{p.desc || p.description}</small></div><em>{p.icon || '🎁'}</em></article>)}
+        {(summary?.privileges || []).length === 0 && <p className="member-empty">暂无权益信息</p>}
+      </section>
+      <section className="member-records">
+        <b>积分流水</b>
+        {records.length === 0 && <p className="member-empty">暂无积分记录</p>}
+        {records.map((r) => <article key={r.id}><div><b>{r.reason}</b><small>{r.createdAt}</small></div><em className={r.delta >= 0 ? 'plus' : 'minus'}>{r.delta >= 0 ? '+' : ''}{r.delta}</em></article>)}
+      </section>
+    </div>
+  );
+}
+
+function FavoritesPage({ onBack, notify }: { onBack: () => void; notify: (message: string) => void }) {
+  const [items, setItems] = useState<Product[]>([]);
+  useEffect(() => { let alive = true; fetchFavorites().then((f) => { if (alive) setItems(f); }).catch(() => {}); return () => { alive = false; }; }, []);
+  const remove = async (id: string) => { try { await toggleFavorite(id); setItems((prev) => prev.filter((p) => p.id !== id)); notify('已取消收藏'); } catch (e) { notify(e instanceof Error ? e.message : '操作失败'); } };
+  return (
+    <div className="mp-list-page">
+      {items.length === 0 && <div className="mp-list-empty">还没有收藏的商品，去商城看看吧</div>}
+      {items.map((p) => <article className="mp-list-row" key={p.id}><img src={p.image} alt="" /><div><b>{p.name}</b><small>{p.origin}</small><strong>¥{p.priceText || p.price}</strong></div><button onClick={() => remove(p.id)}>取消</button></article>)}
+    </div>
+  );
+}
+
+function FootprintsPage({ onBack }: { onBack: () => void }) {
+  const [items, setItems] = useState<FootprintItem[]>([]);
+  useEffect(() => { let alive = true; fetchFootprints().then((f) => { if (alive) setItems(f); }).catch(() => {}); return () => { alive = false; }; }, []);
+  const clearAll = async () => { try { await clearFootprints(); setItems([]); } catch { /* 静默 */ } };
+  const removeOne = async (id: string) => { try { await deleteFootprint(id); setItems((prev) => prev.filter((x) => x.id !== id)); } catch { /* 静默 */ } };
+  return (
+    <div className="mp-list-page">
+      {items.length === 0 && <div className="mp-list-empty">暂无浏览足迹</div>}
+      {items.length > 0 && <button className="mp-list-clear" onClick={clearAll}>清空足迹</button>}
+      {items.map((it) => <article className="mp-list-row" key={it.id}><img src={it.coverImage} alt="" /><div><b>{it.product?.name ? String(it.product.name) : '商品'}</b><small>{it.viewedAt}</small></div><button onClick={() => removeOne(it.id)}>删除</button></article>)}
+    </div>
+  );
+}
+
+type NotifyKey = 'orderNotify' | 'logisticsNotify' | 'promoNotify' | 'communityNotify' | 'personalizedRecommend' | 'footprintVisible';
+
+function GeneralSettingsPage({ onBack, notify }: { onBack: () => void; notify: (message: string) => void }) {
+  const [session] = useState(() => getStoredSession());
+  const [settings, setSettings] = useState<UserSettings>({ orderNotify: true, logisticsNotify: true, promoNotify: true, communityNotify: true, personalizedRecommend: true, footprintVisible: true, voiceEnabled: false, dataSaver: false, fontScale: 2 });
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [pwd, setPwd] = useState({ oldPassword: '', newPassword: '', confirm: '' });
+  useEffect(() => { let alive = true; fetchUserSettings().then((s) => { if (alive) setSettings(s); }).catch(() => {}); return () => { alive = false; }; }, []);
+  const toggleSetting = async (key: NotifyKey) => {
+    const prev = settings;
+    const next = { ...prev, [key]: !prev[key] };
+    setSettings(next);
+    try { const saved = await updateUserSettings({ [key]: next[key] }); setSettings(saved); } catch { setSettings(prev); notify('保存失败，请稍后重试'); }
+  };
+  const rawPhone = session?.phone || (session?.nickname && /^\d{11}$/.test(session.nickname) ? session.nickname : '');
+  const phoneMasked = rawPhone ? `${rawPhone.slice(0, 3)}****${rawPhone.slice(-4)}` : '未绑定';
+  const submitPwd = async () => {
+    if (!pwd.newPassword || pwd.newPassword.length < 6) { notify('新密码需至少 6 位'); return; }
+    if (pwd.newPassword !== pwd.confirm) { notify('两次输入的新密码不一致'); return; }
+    try {
+      const r = await changePassword(pwd.oldPassword, pwd.newPassword);
+      setPwdOpen(false); setPwd({ oldPassword: '', newPassword: '', confirm: '' });
+      notify(r.firstTime ? '密码设置成功' : '密码修改成功');
+    } catch (e) { notify(e instanceof Error ? e.message : '修改失败，请稍后重试'); }
+  };
+  const switchRow = (label: string, key: NotifyKey) => (
+    <div className="gen-row" key={key}>
+      <span>{label}</span>
+      <label className="gen-switch"><input type="checkbox" checked={settings[key]} onChange={() => toggleSetting(key)} /><i /></label>
+    </div>
+  );
+  return (
+    <div className="gen-settings-page">
+      {session ? (
+        <>
+          <section className="gen-card">
+            <b className="gen-title">账号与安全</b>
+            <button className="gen-row" onClick={() => setPwdOpen(true)}><span>修改密码</span><em>›</em></button>
+            <div className="gen-row"><span>手机号</span><em>{phoneMasked}</em></div>
+          </section>
+          <section className="gen-card">
+            <b className="gen-title">消息通知</b>
+            {switchRow('订单状态通知', 'orderNotify')}
+            {switchRow('物流进度通知', 'logisticsNotify')}
+            {switchRow('优惠活动通知', 'promoNotify')}
+            {switchRow('社区互动通知', 'communityNotify')}
+          </section>
+          <section className="gen-card">
+            <b className="gen-title">隐私</b>
+            {switchRow('个性化推荐', 'personalizedRecommend')}
+            {switchRow('允许他人查看我的足迹', 'footprintVisible')}
+          </section>
+        </>
+      ) : (
+        <div className="mp-list-empty">登录后可管理账号设置</div>
+      )}
+      {pwdOpen && (
+        <div className="farmer-modal-mask" onClick={() => setPwdOpen(false)}>
+          <section className="gen-pwd-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="farmer-modal-head"><b>修改密码</b><button onClick={() => setPwdOpen(false)}>×</button></div>
+            <label>原密码（首次设置可留空）<input type="password" value={pwd.oldPassword} onChange={(event) => setPwd({ ...pwd, oldPassword: event.target.value })} /></label>
+            <label>新密码（至少 6 位）<input type="password" value={pwd.newPassword} onChange={(event) => setPwd({ ...pwd, newPassword: event.target.value })} /></label>
+            <label>确认新密码<input type="password" value={pwd.confirm} onChange={(event) => setPwd({ ...pwd, confirm: event.target.value })} /></label>
+            <button onClick={submitPwd}>保存</button>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 常用省份快捷选项：APP 无微信原生省市区 picker，用输入框 + 快捷标签代替。 */
+const REGION_OPTIONS = ['云南', '四川', '贵州', '广西', '广东', '福建', '浙江', '江苏', '山东', '河南', '湖北', '湖南', '陕西', '北京', '上海', '重庆'];
+
+/** 收货地区选择页：对齐小程序 pages/consumer/region/region.wxml 的独立页面。 */
+function RegionPage({ onBack, onManageAddress, notify }: { onBack: () => void; onManageAddress: () => void; notify: (message: string) => void }) {
+  const [province, setProvince] = useState('');
+  const [city, setCity] = useState('');
+  const [district, setDistrict] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const stored = readStoredRegion(REGION_STORAGE_KEY);
+    if (!stored) return;
+    setProvince(stored.province || '');
+    setCity(stored.city || '');
+    setDistrict(stored.district || '');
+  }, []);
+  const saveRegion = () => {
+    const nextProvince = province.trim();
+    const nextCity = city.trim();
+    const nextDistrict = district.trim();
+    if (!nextProvince || !nextCity) { setError('请选择省份和城市'); return; }
+    setError('');
+    const payload = { province: nextProvince, city: nextCity, district: nextDistrict, label: nextCity + (nextDistrict ? ` · ${nextDistrict}` : '') };
+    writeStoredRegion(REGION_STORAGE_KEY, payload);
+    notify('收货地区已保存');
+    onBack();
+  };
+  return <div className="region-page">
+    <div className="region-heading">
+      <b>好物，送到哪里？</b>
+      <span>先选收货地区，详细地址在结算时填写</span>
+    </div>
+    <section className="region-card">
+      <div className="region-field">
+        <label>省份</label>
+        <input value={province} onChange={(event) => { setProvince(event.target.value); setError(''); }} placeholder="请选择省份" />
+      </div>
+      <div className="region-field">
+        <label>城市</label>
+        <input value={city} onChange={(event) => { setCity(event.target.value); setError(''); }} placeholder="请选择城市" />
+      </div>
+      <div className="region-field">
+        <label>区县（选填）</label>
+        <input value={district} onChange={(event) => { setDistrict(event.target.value); }} placeholder="选填，可留空" />
+      </div>
+      <div className="region-chips">
+        <span>常用省份</span>
+        <div>
+          {REGION_OPTIONS.map((item) => (
+            <button key={item} className={province.trim() === item ? 'active' : ''} onClick={() => { setProvince(item); setError(''); }}>{item}</button>
+          ))}
+        </div>
+      </div>
+      {error && <p className="region-error">{error}</p>}
+      <button className="region-primary" onClick={saveRegion}>保存收货地区</button>
+      <p className="region-note">商品是否可配送、运费与送达时间，以结算页实际核算为准。</p>
+      <button className="region-link" onClick={onManageAddress}>管理完整收货地址 ›</button>
+    </section>
+  </div>;
+}
+
+/**
+ * 地域内容推荐地区选择页（与「收货地区」互相独立）。
+ * 只写入 yunlu.home.contentRegion，用于首页地域特色内容流，不影响收货地址与配送。
+ */
+function RegionContentPage({ onBack, notify }: { onBack: () => void; notify: (message: string) => void }) {
+  const [province, setProvince] = useState('');
+  const [city, setCity] = useState('');
+  const [locatedLabel, setLocatedLabel] = useState('');
+  const [locating, setLocating] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const stored = readStoredRegion(CONTENT_REGION_STORAGE_KEY) || readStoredRegion(REGION_STORAGE_KEY);
+    if (!stored) return;
+    setProvince(stored.province || '');
+    setCity(stored.city || '');
+  }, []);
+  /** 获取当前位置并反查所属省份/城市；失败或超时只提示，不阻断手动选择。 */
+  const locate = () => {
+    if (locating) return;
+    setLocating(true);
+    setError('');
+    // 不 await，避免定位期间阻塞 UI；结果回来后只更新状态
+    resolveCurrentCoords()
+      .then(async (coords) => {
+        if (!coords) {
+          setLocating(false);
+          notify('定位不可用，请手动选择地区');
+          return;
+        }
+        try {
+          const resolved = await resolveRegion(coords.latitude, coords.longitude);
+          setLocating(false);
+          if (!resolved || !resolved.province) { notify('定位不可用，请手动选择地区'); return; }
+          setProvince(resolved.province);
+          setCity(resolved.city || '');
+          setLocatedLabel(resolved.label || resolved.city || resolved.province);
+        } catch {
+          setLocating(false);
+          notify('定位不可用，请手动选择地区');
+        }
+      })
+      .catch(() => {
+        setLocating(false);
+        notify('定位不可用，请手动选择地区');
+      });
+  };
+  const saveContentRegion = () => {
+    const nextProvince = province.trim();
+    const nextCity = city.trim();
+    if (!nextProvince) { setError('请先选择一个地区'); return; }
+    setError('');
+    writeStoredRegion(CONTENT_REGION_STORAGE_KEY, { province: nextProvince, city: nextCity || undefined, label: nextCity || nextProvince });
+    notify('已切换到' + (nextCity || nextProvince));
+    onBack();
+  };
+  return <div className="region-page region-content-page">
+    <div className="region-heading">
+      <b>想看哪里的故事？</b>
+      <span>选择地区后，为你推荐当地的文旅、农产与乡村故事</span>
+    </div>
+    <p className="region-note region-content-note">只影响地域特色内容推荐，不影响收货地址</p>
+    <section className="region-card">
+      <button className="region-locate" onClick={locate} disabled={locating}>
+        <span className="region-locate-icon">📍</span>
+        {locating ? '定位中…' : '使用当前位置'}
+      </button>
+      {locatedLabel && <p className="region-located">已定位：{locatedLabel}</p>}
+      <div className="region-field">
+        <label>城市（选填）</label>
+        <input value={city} onChange={(event) => { setCity(event.target.value); setError(''); }} placeholder="选填，可留空" />
+      </div>
+      <div className="region-chips">
+        <span>选择省份</span>
+        <div>
+          {REGION_OPTIONS.map((item) => (
+            <button key={item} className={province.trim() === item ? 'active' : ''} onClick={() => { setProvince(item); setError(''); }}>{item}</button>
+          ))}
+        </div>
+      </div>
+      {error && <p className="region-error">{error}</p>}
+      <button className="region-primary" onClick={saveContentRegion}>查看该地区推荐</button>
+      <p className="region-note">收货地址仍以「选择收货地区」与结算页填写的地址为准。</p>
+    </section>
+  </div>;
 }
 
 function AdoptDetailPage({ notify, onConfirm }: { notify: (message: string) => void; onConfirm: () => void }) {
@@ -4705,7 +6368,7 @@ function AdoptDetailPage({ notify, onConfirm }: { notify: (message: string) => v
 
 function AdoptConfirmPage({ onPay, notify }: { onPay: () => void; notify: (message: string) => void }) {
   const addresses = [
-    { name: '张先生', phone: '138****6688', address: '云南省昆明市呈贡区小满合社区 18 栋 1201' },
+    { name: '张先生', phone: '138****6688', address: '云南省昆明市呈贡区耘露社区 18 栋 1201' },
     { name: '李女士', phone: '159****1122', address: '重庆市渝北区农业科技园 6 号' }
   ];
   const [selectedAddress, setSelectedAddress] = useState(addresses[0]);
@@ -4778,7 +6441,7 @@ function TraceResultPage({ product, traceTimeline }: { product: Product; traceTi
     ['采摘时间', '2026-06-09 08:10'],
     ['基地编号', `LYYN-${String(product.id).padStart(3, '0')}-20260609`],
     ['产地地址', `${product.origin}示范基地`],
-    ['检测机构', '小满合质检中心'],
+    ['检测机构', '耘露质检中心'],
     ['区块链哈希', '0x8f29...A91C']
   ];
   const reports = ['农残检测：合格', '重金属检测：合格', '冷链温控：全程 2-6°C', '质检员：王师傅'];
@@ -4821,19 +6484,14 @@ function TraceResultPage({ product, traceTimeline }: { product: Product; traceTi
 
 function AiPanel({ onClose, onPage, pageMode = false, onCart }: { onClose: () => void; onPage: (page: ConsumerPage) => void; pageMode?: boolean; onCart?: () => void }) {
   const [messages, setMessages] = useState<Array<{ role: 'ai' | 'user'; text: string; action?: { label: string; page: ConsumerPage } }>>([
-    { role: 'ai', text: 'AI 对话服务尚未开通。你可以浏览商品资料或查看现有功能入口。' }
+    { role: 'ai', text: '你好，我是小露。可以帮你推荐好农货、了解商品溯源，也可以查看订单和认养的入口。' }
   ]);
   const [draft, setDraft] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const quickPrompts: string[] = [];
+  const quickPrompts: string[] = ['推荐几款当季蔬菜', '怎么看商品溯源？', '我的订单在哪里？'];
   const openPage = (page: ConsumerPage) => {
     onPage(page);
     onClose();
-  };
-  const localAnswer = (question: string): { text: string; action?: { label: string; page: ConsumerPage } } => {
-    return {
-      text: 'AI 对话服务尚未开通，当前无法生成选购、溯源、认养或售后建议。'
-    };
   };
   const sendMessage = async (text = draft.trim()) => {
     if (!text || isThinking) return;
@@ -4842,22 +6500,18 @@ function AiPanel({ onClose, onPage, pageMode = false, onCart }: { onClose: () =>
     setIsThinking(true);
     try {
       const answer = await askAi(text, 'consumer');
-      const fallback = localAnswer(text);
-      setMessages((prev) => [...prev, { role: 'ai', text: answer || fallback.text, action: answer ? undefined : fallback.action }]);
+      setMessages((prev) => [...prev, { role: 'ai', text: answer }]);
     } catch {
-      window.setTimeout(() => {
-        const answer = localAnswer(text);
-        setMessages((prev) => [...prev, { role: 'ai', text: answer.text, action: answer.action }]);
-      }, 360);
+      setMessages((prev) => [...prev, { role: 'ai', text: '小露暂时无法回复，请稍后再试。你也可以先浏览商品图册或查看订单。' }]);
     } finally {
-      window.setTimeout(() => setIsThinking(false), 420);
+      setIsThinking(false);
     }
   };
 
   if (pageMode) return <div className="mp-ai-page">
-    <header className="mp-ai-head"><button onClick={() => onPage('tabs')}><img src="/assets/miniprogram/sevenfresh/home.png" alt=""/></button><div><img src="/assets/miniprogram/sevenfresh/assistant.png" alt=""/><b>AI 小满</b></div><button onClick={onCart}><img src="/assets/miniprogram/sevenfresh/cart.png" alt=""/></button></header>
-    <main className="mp-ai-scroll"><section className="mp-ai-intro"><b>新鲜好农货</b><span>小满陪你找一份好食材</span><p>可以浏览已有商品资料，也可以了解订单与认养的操作入口。</p></section><div className="mp-ai-service-note">商品查询与操作指引 · AI 对话服务尚未开通</div><div className="mp-ai-shortcuts"><button onClick={() => onPage('mall')}>浏览商品图册 ›</button><button onClick={() => onPage('adoptDetail')}>了解认养样板 ›</button><button onClick={() => onPage('orders')}>查看订单 ›</button></div></main>
-    <footer className="mp-ai-compose"><input disabled placeholder="AI 对话服务尚未开通"/><button disabled>↑</button></footer>
+    <header className="mp-ai-head"><button onClick={() => onPage('tabs')}><img src="/assets/miniprogram/sevenfresh/home.png" alt=""/></button><div><img src="/assets/miniprogram/sevenfresh/assistant.png" alt=""/><b>小露</b></div><button onClick={onCart}><img src="/assets/miniprogram/sevenfresh/cart.png" alt=""/></button></header>
+    <main className="mp-ai-scroll"><section className="mp-ai-intro"><b>新鲜好农货</b><span>小露陪你找一份好食材</span><p>问我推荐好物、商品溯源，或直接说「看订单」「去认养」。</p></section><div className="mp-ai-service-note">商品查询与操作指引 · 智能对话已接入</div><div className="mp-ai-shortcuts"><button onClick={() => onPage('mall')}>浏览商品图册 ›</button><button onClick={() => onPage('adoptDetail')}>了解认养样板 ›</button><button onClick={() => onPage('orders')}>查看订单 ›</button></div></main>
+    <footer className="mp-ai-compose"><input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendMessage(); }} placeholder="问我推荐好物、商品溯源…"/><button onClick={() => sendMessage()}>↑</button></footer>
   </div>;
 
   return (
@@ -4865,7 +6519,7 @@ function AiPanel({ onClose, onPage, pageMode = false, onCart }: { onClose: () =>
       <section className="ai-panel consumer-ai-panel" onClick={(event: React.MouseEvent<HTMLElement>) => event.stopPropagation()}>
         <header className="consumer-ai-head">
           <span className="consumer-ai-orb"><Bot size={18} /></span>
-          <div><b>小满 AI</b><small>选购 · 溯源 · 认养 · 售后</small></div>
+          <div><b>小露</b><small>选购 · 溯源 · 认养 · 售后</small></div>
           <button onClick={onClose}>×</button>
         </header>
         <div className="consumer-ai-body">
@@ -4881,8 +6535,8 @@ function AiPanel({ onClose, onPage, pageMode = false, onCart }: { onClose: () =>
           {quickPrompts.map((item) => <button key={item} onClick={() => sendMessage(item)}>{item}</button>)}
         </div>
         <footer className="consumer-ai-input">
-          <input disabled value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendMessage(); }} placeholder="AI 对话服务尚未开通" />
-          <button disabled>暂未开通</button>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendMessage(); }} placeholder="问我推荐好物、商品溯源…" />
+          <button onClick={() => sendMessage()}>发送</button>
         </footer>
       </section>
     </div>
@@ -4939,16 +6593,16 @@ function FarmerFloatingAssistant({
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
       onPointerCancel={() => setDrag(null)}
-      aria-label="小满农事AI"
+      aria-label="小露农事AI"
     >
-      <span className="super-ai-mark"><i /><i /><i /><em /></span>
+      <img className="lulu-avatar" src="/assets/miniprogram/ui-v2/ai-lulu.png" alt="露露" />
     </button>
   );
 }
 
 function FarmerAiPanel({ onClose, onPage }: { onClose: () => void; onPage: (page: FarmerPage) => void }) {
   const [messages, setMessages] = useState<Array<{ role: 'ai' | 'user'; text: string; action?: { label: string; page: FarmerPage } }>>([
-    { role: 'ai', text: '农事 AI 服务尚未开通。我不会读取农场设备或作物状态，也不能提供实时诊断。你可以先浏览农事日历、环境监测和技术支持入口。' }
+    { role: 'ai', text: '你好，我是小露农事助手。关于种植、病虫害、施肥浇水、天气预报都可以问我，我会给你实用的建议。' }
   ]);
   const [draft, setDraft] = useState('');
   const [isThinking, setIsThinking] = useState(false);
@@ -4962,22 +6616,26 @@ function FarmerAiPanel({ onClose, onPage }: { onClose: () => void; onPage: (page
     '叶片异常怎么办？',
     '现在适合浇水吗？'
   ];
-  const sendMessage = (text = draft.trim()) => {
+  const sendMessage = async (text = draft.trim()) => {
     if (!text || isThinking) return;
     setMessages((prev) => [...prev, { role: 'user', text }]);
     setDraft('');
     setIsThinking(true);
-    window.setTimeout(() => {
-      setMessages((prev) => [...prev, { role: 'ai', text: '农事 AI 服务尚未开通。我无法根据当前农场实时数据诊断或生成农事建议。请查看已接入的服务状态，或联系本地农技人员。' }]);
+    try {
+      const answer = await askAi(text, 'farmer');
+      setMessages((prev) => [...prev, { role: 'ai', text: answer }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: 'ai', text: '农事助手暂时无法回复，请稍后再试。你也可以浏览农事日历、环境监测或联系农技专家。' }]);
+    } finally {
       setIsThinking(false);
-    }, 180);
+    }
   };
   return (
     <div className="ai-overlay farmer-ai-overlay" onClick={onClose}>
       <section className="farmer-chat-panel" onClick={(event: React.MouseEvent<HTMLElement>) => event.stopPropagation()}>
         <header className="farmer-chat-head">
-          <span className="super-ai-mark mini"><i /><i /><i /><em /></span>
-          <div><b>小满 AI</b><small><i /> 农事 AI 服务尚未开通</small></div>
+          <img className="lulu-avatar mini" src="/assets/miniprogram/ui-v2/ai-lulu.png" alt="露露" />
+          <div><b>小露</b><small><i /> 农事智能助手在线</small></div>
           <button onClick={onClose}>×</button>
         </header>
         <div className="farmer-chat-body">

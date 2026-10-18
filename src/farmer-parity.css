@@ -304,13 +304,17 @@
 .farmer-mp .shop-product-list { display: grid; gap: 9px; }
 .farmer-mp .shop-product-card { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 12px; padding: 10px; border: 1px solid var(--farmer-line); border-radius: 17px; background: var(--farmer-card); }
 .farmer-mp .shop-product-img { position: relative; min-height: 82px; border-radius: 12px; background-color: #eaf0e1; background-position: center; background-size: cover; }
-.farmer-mp .shop-product-img em { position: absolute; top: 6px; left: 6px; padding: 3px 6px; border-radius: 999px; color: white; background: var(--farmer-green-soft); font-size: 9px; font-style: normal; }
+.farmer-mp .shop-product-img em { position: absolute; top: 6px; left: 6px; bottom: auto; height: auto; max-height: -webkit-fit-content; display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 999px; line-height: 1.15; white-space: nowrap; color: white; background: var(--farmer-green-soft); font-size: 9px; font-style: normal; }
 .farmer-mp .shop-product-img em.review { color: #704321; background: #f2e8d5; }
+.farmer-mp .shop-product-img em.reject { color: #fff; background: #c0392b; }
 .farmer-mp .shop-product-info { align-self: center; min-width: 0; }
 .farmer-mp .shop-product-info > b { display: block; color: var(--farmer-ink); font-size: 14px; }
 .farmer-mp .shop-product-info p { margin: 8px 0 4px; }
 .farmer-mp .shop-product-info strong { color: #a15831; font-size: 17px; }
 .farmer-mp .shop-product-info p span,.farmer-mp .shop-product-info small { color: var(--farmer-muted); font-size: 11px; }
+.farmer-mp .shop-product-reject { display: block; margin-top: 5px; color: #c0392b; font-size: 10px; line-height: 1.45; }
+.farmer-mp .shop-product-actions { display: flex; gap: 8px; margin-top: 8px; }
+.farmer-mp .shop-product-actions button { min-height: 27px; padding: 0 13px; border: 1px solid var(--farmer-green-soft); border-radius: 999px; color: var(--farmer-green); background: #f4f6ef; font-size: 11px; }
 
 /* Farming calendar and task cards. */
 .farmer-mp .farming-page-header { align-items: flex-start; padding: 16px; }
@@ -505,7 +509,10 @@
 
 .farmer-mp .mp-sub-nav { position: sticky; z-index: 4; top: 0; display: grid; grid-template-columns: 75px minmax(0,1fr) 75px; align-items: center; min-height: 52px; margin: -12px -16px 10px; padding: 0 8px; border-bottom: 1px solid var(--farmer-line); color: var(--farmer-ink); background: rgba(247,247,240,.96); backdrop-filter: blur(12px); }
 .farmer-mp .mp-sub-nav { min-height: calc(52px + env(safe-area-inset-top,0px)); padding-top: env(safe-area-inset-top,0px); }
-.farmer-mp .mp-sub-nav button { justify-self: start; min-height: 40px; padding: 0 9px; border: 0; color: var(--farmer-green); background: transparent; font-size: 12px; }
+/* 与消费端二级页返回按钮保持完全一致：透明底 + 深色文字 + 13px */
+.farmer-mp .mp-sub-nav button { justify-self: start; display: inline-flex; align-items: center; gap: 1px; min-height: 40px; padding: 0; border: 0; color: var(--farmer-ink); background: transparent; font-size: 13px; font-weight: 500; }
+.farmer-mp .mp-sub-nav button svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.farmer-mp .mp-sub-nav button:active { opacity: .55; }
 .farmer-mp .mp-sub-nav b { overflow: hidden; color: var(--farmer-green); font-size: 15px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .farmer-mp.sub-mp { padding-top: 12px; }
 .farmer-mp .crop-stats-card { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: center; gap: 5px; margin-bottom: 12px; padding: 14px 8px; border-radius: 17px; color: #eaf0e1; background: var(--farmer-green); text-align: center; }
@@ -695,6 +702,9 @@
 .farmer-mp .tech-sla-row span { display: grid; gap: 3px; }
 .farmer-mp .tech-sla-row b { color: var(--farmer-green); font-size: 16px; }
 .farmer-mp .tech-sla-row em { color: var(--farmer-muted); font-size: 9px; font-style: normal; }
+.farmer-mp .tech-contact-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--farmer-line); border-radius: 13px; background: var(--farmer-card); color: var(--farmer-ink); font-size: 10px; }
+.farmer-mp .tech-contact-bar em { margin-left: auto; padding: 3px 9px; border-radius: 999px; color: white; background: var(--farmer-green); font-size: 9px; font-style: normal; }
+.farmer-mp .tech-empty { padding: 20px; border: 1px dashed var(--farmer-line); border-radius: 13px; color: var(--farmer-muted); text-align: center; font-size: 11px; }
 .farmer-mp .tech-tabs { display: flex; gap: 6px; margin: 10px 0; overflow-x: auto; }
 .farmer-mp .tech-tabs button { min-height: 36px; flex: 1; border: 1px solid var(--farmer-line); border-radius: 10px; color: var(--farmer-muted); background: var(--farmer-card); font-size: 10px; white-space: nowrap; }
 .farmer-mp .tech-tabs button.active { border-color: var(--farmer-green-soft); color: white; background: var(--farmer-green); }
@@ -743,6 +753,40 @@
 .farmer-mp-shell .mp-form textarea,.farmer-mp-shell .tech-book-sheet textarea { min-height: 82px; resize: vertical; }
 .farmer-mp-shell .mp-primary,.farmer-mp-shell .farming-add-modal > button { min-height: 43px; border: 0; border-radius: 12px; color: white; background: var(--farmer-green); font-weight: 700; }
 
+/* 农户端「我的」真实头像 & 露露 AI 聊天整页布局 */
+.farmer-mp-shell .fmy-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.farmer-mp .farmer-ai-chat-page { height: min(calc(100vh - 176px), 760px); min-height: 460px; border-radius: 20px; animation: none; }
+
+/* 我的工单（报修 + 服务预约） */
+.farmer-mp .farmer-work-orders { padding: 4px 0 20px; }
+.farmer-mp .fwo-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.farmer-mp .fwo-tabs button { min-height: 38px; flex: 1; border: 1px solid var(--farmer-line); border-radius: 11px; color: var(--farmer-muted); background: var(--farmer-card); font-size: 12px; }
+.farmer-mp .fwo-tabs button.active { border-color: var(--farmer-green-soft); color: white; background: var(--farmer-green); }
+.farmer-mp .fwo-list { display: grid; gap: 9px; }
+.farmer-mp .fwo-list article { padding: 13px; border: 1px solid var(--farmer-line); border-radius: 15px; background: var(--farmer-card); }
+.farmer-mp .fwo-list article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.farmer-mp .fwo-list b { color: var(--farmer-ink); font-size: 13px; }
+.farmer-mp .fwo-list em { padding: 3px 8px; border-radius: 999px; color: var(--farmer-green-soft); background: var(--farmer-tint); font-size: 10px; font-style: normal; white-space: nowrap; }
+.farmer-mp .fwo-list p { margin: 8px 0 0; color: var(--farmer-muted); font-size: 11px; }
+.farmer-mp .fwo-list small { display: block; margin-top: 6px; color: #8a958e; font-size: 10px; line-height: 1.5; }
+.farmer-mp .fwo-empty { padding: 26px 16px; border: 1px dashed var(--farmer-line); border-radius: 13px; color: var(--farmer-muted); text-align: center; font-size: 12px; background: var(--farmer-card); }
+.farmer-mp .tech-orders-entry { display: block; width: 100%; margin-bottom: 9px; padding: 11px; border: 1px dashed var(--farmer-green-soft); border-radius: 11px; color: var(--farmer-green-soft); background: var(--farmer-tint); font-size: 11px; font-weight: 700; }
+
+/* 店铺上传表单补充字段（单位/分类/图片） */
+.farmer-mp-shell .shop-upload-images { display: flex; flex-wrap: wrap; gap: 8px; }
+.farmer-mp-shell .shop-upload-thumb { position: relative; width: 64px; height: 64px; overflow: hidden; border-radius: 11px; background: #eef2e7; }
+.farmer-mp-shell .shop-upload-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.farmer-mp-shell .shop-upload-thumb button { position: absolute; top: 3px; right: 3px; display: grid; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 50%; color: white; background: rgba(25,41,32,.72); font-size: 12px; line-height: 1; }
+.farmer-mp-shell .shop-upload-add { display: grid; width: 64px; height: 64px; place-items: center; border: 1px dashed var(--farmer-green-soft); border-radius: 11px; color: var(--farmer-green-soft); background: #f4f6ef; font-size: 11px; }
+.farmer-mp-shell .shop-upload-add:disabled { opacity: .55; }
+.farmer-mp-shell .shop-form-field { display: grid; gap: 6px; color: #526553; font-size: 11px; font-weight: 650; }
+.farmer-mp-shell .shop-chip-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.farmer-mp-shell .shop-chip-row button { min-height: 32px; padding: 0 13px; border: 1px solid var(--farmer-line); border-radius: 999px; color: var(--farmer-muted); background: #f8f8f3; font-size: 11px; }
+.farmer-mp-shell .shop-chip-row button.active { border-color: var(--farmer-green-soft); color: white; background: var(--farmer-green); }
+.farmer-mp-shell .shop-locate-btn { min-height: 38px; border: 1px solid var(--farmer-line); border-radius: 11px; color: var(--farmer-green); background: #f4f6ef; font-size: 12px; }
+.farmer-mp-shell .shop-locate-btn:disabled { opacity: .55; }
+.farmer-mp-shell .shop-locate-status { color: var(--farmer-muted); font-size: 11px; font-weight: 400; }
+
 @media (min-width: 600px) {
   .farmer-mp { max-width: 560px; margin: 0 auto; padding-right: 20px; padding-left: 20px; }
   .farmer-mp .home-top-card { margin-right: -20px; margin-left: -20px; padding-right: 24px; padding-left: 24px; }
@@ -761,3 +805,15 @@
   .farmer-mp .shop-section-header { align-items: flex-start; flex-direction: column; }
   .farmer-mp .env-device-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+
+/* 设置页对齐小程序（分组标题 + 退出登录） */
+.farmer-settings-title { display: block; padding: 2px 0 6px; color: var(--farmer-ink); font-size: 13px; font-weight: 700; }
+.farmer-settings-mp .gen-row { border: 0; background: transparent; font-family: inherit; }
+.farmer-settings-mp .gen-row span { color: var(--farmer-ink); }
+.gen-logout { display: block; width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 13px; background: var(--farmer-card); color: #cf6945; font-size: 14px; font-weight: 700; }
+
+/* 环境监测：MJPEG 实时流覆盖层 */
+.farmer-mp .env-video-card .env-live-stream { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 1; z-index: 1; background: #0c1f16; }
+.farmer-mp .env-video-card .env-video-overlay { z-index: 2; }
+.farmer-mp .env-video-card .env-video-overlay { z-index: 2; }
+.farmer-mp .env-video-card .env-video-overlay { z-index: 2; }
